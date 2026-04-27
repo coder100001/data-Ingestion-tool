@@ -1,0 +1,131 @@
+# Data Ingestion Tool - Example Configuration
+
+# Application settings
+app:
+  name: "data-ingestion-tool"
+  log_level: "info"  # debug, info, warn, error
+  log_file: "logs/ingestion.log"
+
+# Source configuration
+source:
+  type: "mysql"  # mysql, kafka, postgresql, rest
+  
+  # MySQL configuration
+  mysql:
+    host: "localhost"
+    port: 3306
+    user: "root"
+    password: "password"
+    server_id: 1001  # Must be unique, not used by other replicas
+    
+    # Tables to monitor (empty array means all tables)
+    tables:
+      - "testdb.users"
+      - "testdb.orders"
+    
+    # Tables to exclude from monitoring
+    exclude_tables:
+      - "testdb.sessions"
+      - "testdb.logs"
+    
+    # Optional: Start from specific binlog position
+    # If not specified, starts from current master position
+    # binlog_file: "mysql-bin.000001"
+    # binlog_pos: 4
+
+  # Kafka configuration (placeholder for future implementation)
+  kafka:
+    brokers:
+      - "localhost:9092"
+    topics:
+      - "db-changes"
+    group_id: "data-ingestion-tool"
+
+  # PostgreSQL configuration (placeholder for future implementation)
+  postgresql:
+    host: "localhost"
+    port: 5432
+    user: "postgres"
+    password: "password"
+    database: "testdb"
+    slot_name: "ingestion_slot"
+
+  # REST API configuration (placeholder for future implementation)
+  rest:
+    base_url: "https://api.example.com"
+    endpoints:
+      - "/v1/changes"
+    headers:
+      Authorization: "Bearer token"
+    poll_interval_sec: 30
+
+# Storage configuration
+storage:
+  type: "local"  # Currently only local is supported
+  
+  local:
+    # Base path for data lake
+    base_path: "./data-lake"
+    
+    # Partition strategy: date, hour, or none
+    # - date: Partition by date (YYYY-MM-DD)
+    # - hour: Partition by hour (YYYY-MM-DD/HH)
+    # - none: No partitioning
+    partition_strategy: "date"
+    
+    # File format: json, csv
+    file_format: "json"
+    
+    # Maximum file size in MB before rotation
+    max_file_size_mb: 100
+    
+    # Maximum records per file before rotation
+    max_records_per_file: 10000
+
+# Checkpoint configuration
+checkpoint:
+  # Path to checkpoint file (stores ingestion position)
+  storage_path: "./metadata/checkpoint.json"
+  
+  # Auto-save interval in seconds
+  save_interval_sec: 10
+
+# Processing configuration
+processing:
+  # Batch size for processing
+  batch_size: 100
+  
+  # Number of worker goroutines for parallel processing
+  worker_count: 4
+  
+  # Filter rules (SQL-like WHERE clause syntax)
+  # Examples:
+  # - "age > 18"
+  # - "status = 'active'"
+  # - "created_at > '2024-01-01'"
+  filters: []
+  
+  # Transform rules
+  # Examples:
+  # - "add_timestamp:processed_at"
+  # - "mask:email:***"
+  transforms: []
+
+# Advanced settings (optional)
+advanced:
+  # Retry configuration
+  retry:
+    max_attempts: 3
+    initial_delay_ms: 1000
+    max_delay_ms: 30000
+  
+  # Connection pool settings
+  connection_pool:
+    max_connections: 10
+    connection_timeout_sec: 30
+    read_timeout_sec: 60
+  
+  # Performance tuning
+  performance:
+    channel_buffer_size: 1000
+    flush_interval_sec: 5

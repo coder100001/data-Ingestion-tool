@@ -1,0 +1,65 @@
+version: '3.8'
+
+services:
+  # MySQL source database
+  mysql:
+    image: mysql:8.0
+    container_name: mysql-source
+    environment:
+      MYSQL_ROOT_PASSWORD: password
+      MYSQL_DATABASE: testdb
+    ports:
+      - "3306:3306"
+    volumes:
+      - mysql_data:/var/lib/mysql
+      - ./scripts/init.sql:/docker-entrypoint-initdb.d/init.sql
+    command: >
+      --server-id=1
+      --log-bin=mysql-bin
+      --binlog-format=ROW
+      --binlog-row-image=FULL
+    networks:
+      - ingestion-network
+
+  # Data Ingestion Tool
+  ingester:
+    build: .
+    container_name: data-ingestion-tool
+    depends_on:
+      - mysql
+    volumes:
+      - ./config.yaml:/app/config.yaml
+      - ./data-lake:/app/data-lake
+      - ./metadata:/app/metadata
+      - ./logs:/app/logs
+    environment:
+      - LOG_LEVEL=info
+    networks:
+      - ingestion-network
+    restart: unless-stopped
+
+  # Optional: MinIO for S3-compatible storage (future use)
+  minio:
+    image: minio/minio:latest
+    container_name: minio
+    ports:
+      - "9000:9000"
+      - "9001:9001"
+    environment:
+      MINIO_ROOT_USER: minioadmin
+      MINIO_ROOT_PASSWORD: minioadmin
+    volumes:
+      - minio_data:/data
+    command: server /data --console-address ":9001"
+    networks:
+      - ingestion-network
+    profiles:
+      - s3
+
+volumes:
+  mysql_data:
+  minio_data:
+
+networks:
+  ingestion-network:
+    driver: bridge
