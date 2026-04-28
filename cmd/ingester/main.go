@@ -47,6 +47,9 @@ func main() {
 		os.Exit(1)
 	}
 
+	// Warn about plaintext passwords in configuration
+	logger.WarnPlaintextPasswords(log, cfg)
+
 	log.WithFields(map[string]interface{}{
 		"version": version,
 		"config":  *configPath,

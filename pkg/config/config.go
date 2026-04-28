@@ -3,6 +3,7 @@ package config
 import (
 	"fmt"
 	"os"
+	"strings"
 
 	"gopkg.in/yaml.v3"
 )
@@ -14,6 +15,7 @@ type Config struct {
 	Storage    StorageConfig    `yaml:"storage"`
 	Checkpoint CheckpointConfig `yaml:"checkpoint"`
 	Processing ProcessingConfig `yaml:"processing"`
+	Retry      RetryConfig      `yaml:"retry"`
 }
 
 // AppConfig contains application-level settings
@@ -25,11 +27,11 @@ type AppConfig struct {
 
 // SourceConfig contains data source configuration
 type SourceConfig struct {
-	Type   string       `yaml:"type"`
-	MySQL  MySQLConfig  `yaml:"mysql"`
-	Kafka  KafkaConfig  `yaml:"kafka"`
+	Type       string         `yaml:"type"`
+	MySQL      MySQLConfig    `yaml:"mysql"`
+	Kafka      KafkaConfig    `yaml:"kafka"`
 	PostgreSQL PostgresConfig `yaml:"postgresql"`
-	REST   RESTConfig   `yaml:"rest"`
+	REST       RESTConfig     `yaml:"rest"`
 }
 
 // MySQLConfig contains MySQL-specific settings
@@ -64,10 +66,10 @@ type PostgresConfig struct {
 
 // RESTConfig contains REST API-specific settings
 type RESTConfig struct {
-	BaseURL     string            `yaml:"base_url"`
-	Endpoints   []string          `yaml:"endpoints"`
-	Headers     map[string]string `yaml:"headers"`
-	PollInterval int              `yaml:"poll_interval_sec"`
+	BaseURL      string            `yaml:"base_url"`
+	Endpoints    []string          `yaml:"endpoints"`
+	Headers      map[string]string `yaml:"headers"`
+	PollInterval int               `yaml:"poll_interval_sec"`
 }
 
 // StorageConfig contains storage configuration
@@ -78,14 +80,14 @@ type StorageConfig struct {
 
 // LocalConfig contains local storage settings
 type LocalConfig struct {
-	BasePath           string            `yaml:"base_path"`
-	PartitionStrategy  string            `yaml:"partition_strategy"`
-	FileFormat         string            `yaml:"file_format"`
-	Compression        string            `yaml:"compression"`
-	MaxFileSizeMB      int               `yaml:"max_file_size_mb"`
-	MaxRecordsPerFile  int               `yaml:"max_records_per_file"`
-	Parquet            ParquetConfig     `yaml:"parquet"`
-	Schema             SchemaConfig      `yaml:"schema"`
+	BasePath          string        `yaml:"base_path"`
+	PartitionStrategy string        `yaml:"partition_strategy"`
+	FileFormat        string        `yaml:"file_format"`
+	Compression       string        `yaml:"compression"`
+	MaxFileSizeMB     int           `yaml:"max_file_size_mb"`
+	MaxRecordsPerFile int           `yaml:"max_records_per_file"`
+	Parquet           ParquetConfig `yaml:"parquet"`
+	Schema            SchemaConfig  `yaml:"schema"`
 }
 
 // ParquetConfig contains Parquet-specific settings
@@ -97,9 +99,9 @@ type ParquetConfig struct {
 
 // SchemaConfig contains schema registry settings
 type SchemaConfig struct {
-	RegistryPath   string `yaml:"registry_path"`
-	Compatibility  string `yaml:"compatibility"`
-	AutoRegister   bool   `yaml:"auto_register"`
+	RegistryPath  string `yaml:"registry_path"`
+	Compatibility string `yaml:"compatibility"`
+	AutoRegister  bool   `yaml:"auto_register"`
 }
 
 // CheckpointConfig contains checkpoint settings
@@ -110,10 +112,21 @@ type CheckpointConfig struct {
 
 // ProcessingConfig contains data processing settings
 type ProcessingConfig struct {
-	BatchSize   int      `yaml:"batch_size"`
-	WorkerCount int      `yaml:"worker_count"`
-	Filters     []string `yaml:"filters"`
-	Transforms  []string `yaml:"transforms"`
+	BatchSize           int      `yaml:"batch_size"`
+	WorkerCount         int      `yaml:"worker_count"`
+	Filters             []string `yaml:"filters"`
+	Transforms          []string `yaml:"transforms"`
+	MaxRetries          int      `yaml:"max_retries"`
+	RetryIntervalMs     int      `yaml:"retry_interval_ms"`
+	DeadLetterQueuePath string   `yaml:"dead_letter_queue_path"`
+	DeadLetterMaxSizeMB int      `yaml:"dead_letter_max_size_mb"`
+}
+
+// RetryConfig contains retry settings
+type RetryConfig struct {
+	MaxRetries        int `yaml:"max_retries"`
+	InitialIntervalMs int `yaml:"initial_interval_ms"`
+	MaxIntervalMs     int `yaml:"max_interval_ms"`
 }
 
 // Load reads configuration from a YAML file
@@ -130,6 +143,9 @@ func Load(path string) (*Config, error) {
 
 	// Set defaults
 	cfg.setDefaults()
+
+	// Resolve secrets from environment variables
+	ResolveSecrets(&cfg)
 
 	// Validate configuration
 	if err := cfg.Validate(); err != nil {
@@ -149,6 +165,9 @@ func (c *Config) setDefaults() {
 	}
 	if c.Source.Type == "" {
 		c.Source.Type = "mysql"
+	}
+	if c.Source.MySQL.Port == 0 {
+		c.Source.MySQL.Port = 3306
 	}
 	if c.Storage.Type == "" {
 		c.Storage.Type = "local"
@@ -195,6 +214,27 @@ func (c *Config) setDefaults() {
 	if c.Processing.WorkerCount == 0 {
 		c.Processing.WorkerCount = 4
 	}
+	if c.Processing.MaxRetries == 0 {
+		c.Processing.MaxRetries = 3
+	}
+	if c.Processing.RetryIntervalMs == 0 {
+		c.Processing.RetryIntervalMs = 1000
+	}
+	if c.Processing.DeadLetterQueuePath == "" {
+		c.Processing.DeadLetterQueuePath = "./metadata/deadletter.jsonl"
+	}
+	if c.Processing.DeadLetterMaxSizeMB == 0 {
+		c.Processing.DeadLetterMaxSizeMB = 100
+	}
+	if c.Retry.MaxRetries == 0 {
+		c.Retry.MaxRetries = 3
+	}
+	if c.Retry.InitialIntervalMs == 0 {
+		c.Retry.InitialIntervalMs = 100
+	}
+	if c.Retry.MaxIntervalMs == 0 {
+		c.Retry.MaxIntervalMs = 10000
+	}
 }
 
 // Validate checks if the configuration is valid
@@ -204,9 +244,6 @@ func (c *Config) Validate() error {
 	case "mysql":
 		if c.Source.MySQL.Host == "" {
 			return fmt.Errorf("mysql host is required")
-		}
-		if c.Source.MySQL.Port == 0 {
-			c.Source.MySQL.Port = 3306
 		}
 		if c.Source.MySQL.User == "" {
 			return fmt.Errorf("mysql user is required")
@@ -251,4 +288,42 @@ func (c *Config) Validate() error {
 	}
 
 	return nil
+}
+
+// IsPlaintextPassword checks if a password value is plaintext (not using env var)
+func IsPlaintextPassword(password string) bool {
+	if password == "" {
+		return false
+	}
+	// If it starts with ${ and ends with }, it's using env var syntax
+	if strings.HasPrefix(password, "${") && strings.HasSuffix(password, "}") {
+		return false
+	}
+	return true
+}
+
+// GetPlaintextPasswordFields returns a list of fields that contain plaintext passwords
+func (c *Config) GetPlaintextPasswordFields() []string {
+	var fields []string
+
+	// Check MySQL password
+	if c.Source.Type == "mysql" && IsPlaintextPassword(c.Source.MySQL.Password) {
+		fields = append(fields, "source.mysql.password")
+	}
+
+	// Check PostgreSQL password
+	if c.Source.Type == "postgresql" && IsPlaintextPassword(c.Source.PostgreSQL.Password) {
+		fields = append(fields, "source.postgresql.password")
+	}
+
+	// Check REST Authorization header
+	if c.Source.Type == "rest" && c.Source.REST.Headers != nil {
+		if auth, exists := c.Source.REST.Headers["Authorization"]; exists {
+			if IsPlaintextPassword(auth) {
+				fields = append(fields, "source.rest.headers.Authorization")
+			}
+		}
+	}
+
+	return fields
 }

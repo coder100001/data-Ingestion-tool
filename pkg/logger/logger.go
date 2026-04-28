@@ -30,6 +30,9 @@ func New(level, logFile string) (*Logger, error) {
 		TimestampFormat: "2006-01-02 15:04:05",
 	})
 
+	// Add sanitize hook for log field sanitization
+	log.AddHook(NewSanitizeHook())
+
 	// Set output
 	if logFile != "" {
 		// Create log directory if it doesn't exist

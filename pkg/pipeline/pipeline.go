@@ -9,8 +9,10 @@ import (
 	"time"
 
 	"data-ingestion-tool/pkg/config"
+	"data-ingestion-tool/pkg/deadletter"
 	"data-ingestion-tool/pkg/logger"
 	"data-ingestion-tool/pkg/models"
+	"data-ingestion-tool/pkg/retry"
 	"data-ingestion-tool/pkg/storage"
 )
 
@@ -26,6 +28,8 @@ type Pipeline struct {
 	wg           sync.WaitGroup
 	ctx          context.Context
 	cancel       context.CancelFunc
+	dlq          *deadletter.Queue
+	retryCfg     retry.Config
 }
 
 // Filter defines the interface for data filtering
@@ -59,7 +63,17 @@ func NewPipeline(cfg *config.Config, logger *logger.Logger, storage Storage) *Pi
 		workers:      cfg.Processing.WorkerCount,
 		ctx:          ctx,
 		cancel:       cancel,
+		retryCfg: retry.Config{
+			MaxRetries:        cfg.Retry.MaxRetries,
+			InitialIntervalMs: cfg.Retry.InitialIntervalMs,
+			MaxIntervalMs:     cfg.Retry.MaxIntervalMs,
+		},
 	}
+}
+
+// SetDeadLetterQueue sets the dead letter queue for the pipeline
+func (p *Pipeline) SetDeadLetterQueue(dlq *deadletter.Queue) {
+	p.dlq = dlq
 }
 
 // AddFilter adds a filter to the pipeline
@@ -150,7 +164,7 @@ func (p *Pipeline) worker(id int) {
 	}
 }
 
-// processChange processes a single data change
+// processChange processes a single data change with retry and dead letter queue
 func (p *Pipeline) processChange(change *models.DataChange) error {
 	// Apply filters
 	for _, filter := range p.filters {
@@ -164,19 +178,44 @@ func (p *Pipeline) processChange(change *models.DataChange) error {
 		}
 	}
 
-	// Apply transformations
+	// Apply transformations with retry
 	for _, transformer := range p.transformers {
-		if err := transformer.Transform(change); err != nil {
+		t := transformer
+		if err := retry.WithRetryContext(p.ctx, p.retryCfg, func() error {
+			return t.Transform(change)
+		}); err != nil {
+			p.writeToDeadLetter(change, fmt.Sprintf("transformation failed: %v", err), p.retryCfg.MaxRetries)
 			return fmt.Errorf("transformation failed: %w", err)
 		}
 	}
 
-	// Write to storage
-	if err := p.storage.Write(change); err != nil {
+	// Write to storage with retry
+	if err := retry.WithRetryContext(p.ctx, p.retryCfg, func() error {
+		return p.storage.Write(change)
+	}); err != nil {
+		p.writeToDeadLetter(change, fmt.Sprintf("storage write failed: %v", err), p.retryCfg.MaxRetries)
 		return fmt.Errorf("storage write failed: %w", err)
 	}
 
 	return nil
+}
+
+// writeToDeadLetter writes a failed record to the dead letter queue
+func (p *Pipeline) writeToDeadLetter(change *models.DataChange, failureReason string, retryCount int) {
+	if p.dlq == nil {
+		return
+	}
+
+	if err := p.dlq.Write(change, failureReason, retryCount); err != nil {
+		p.logger.WithError(err).Error("Failed to write to dead letter queue")
+	} else {
+		p.logger.WithFields(map[string]interface{}{
+			"database": change.Database,
+			"table":    change.Table,
+			"type":     change.Type,
+			"reason":   logger.SanitizeStringValue(failureReason),
+		}).Warn("Record written to dead letter queue")
+	}
 }
 
 // initFilters initializes filters from configuration
