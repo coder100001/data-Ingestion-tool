@@ -24,6 +24,7 @@ type MySQLConnector struct {
 	syncer     *replication.BinlogSyncer
 	streamer   *replication.BinlogStreamer
 	mu         sync.RWMutex
+	canalOnce  sync.Once
 	tableCache map[string]*models.TableInfo
 }
 
@@ -409,23 +410,28 @@ func (m *MySQLConnector) shouldProcessTable(database, table string) bool {
 }
 
 // initCanal lazily initializes the canal instance for table schema queries
+// Uses sync.Once to ensure thread-safe single initialization
 func (m *MySQLConnector) initCanal() error {
-	mysqlCfg := m.cfg.Source.MySQL
-	cfg := canal.NewDefaultConfig()
-	cfg.Addr = fmt.Sprintf("%s:%d", mysqlCfg.Host, mysqlCfg.Port)
-	cfg.User = mysqlCfg.User
-	cfg.Password = mysqlCfg.Password
-	cfg.ServerID = mysqlCfg.ServerID
-	cfg.Flavor = "mysql"
-	cfg.Dump.ExecutionPath = ""
+	var initErr error
+	m.canalOnce.Do(func() {
+		mysqlCfg := m.cfg.Source.MySQL
+		cfg := canal.NewDefaultConfig()
+		cfg.Addr = fmt.Sprintf("%s:%d", mysqlCfg.Host, mysqlCfg.Port)
+		cfg.User = mysqlCfg.User
+		cfg.Password = mysqlCfg.Password
+		cfg.ServerID = mysqlCfg.ServerID
+		cfg.Flavor = "mysql"
+		cfg.Dump.ExecutionPath = ""
 
-	c, err := canal.NewCanal(cfg)
-	if err != nil {
-		return fmt.Errorf("failed to create canal: %w", err)
-	}
+		c, err := canal.NewCanal(cfg)
+		if err != nil {
+			initErr = fmt.Errorf("failed to create canal: %w", err)
+			return
+		}
 
-	m.canal = c
-	return nil
+		m.canal = c
+	})
+	return initErr
 }
 
 // Stop stops the binlog capture
