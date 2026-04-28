@@ -16,33 +16,33 @@ import (
 
 // FileHeader represents the header of a columnar file
 type FileHeader struct {
-	Magic       [4]byte `json:"magic"`
-	Version     int32   `json:"version"`
-	SchemaOffset int64  `json:"schema_offset"`
-	SchemaSize   int64  `json:"schema_size"`
-	NumRows      int64  `json:"num_rows"`
-	NumRowGroups int32  `json:"num_row_groups"`
-	CreatedAt    int64  `json:"created_at"`
+	Magic        [4]byte `json:"magic"`
+	Version      int32   `json:"version"`
+	SchemaOffset int64   `json:"schema_offset"`
+	SchemaSize   int64   `json:"schema_size"`
+	NumRows      int64   `json:"num_rows"`
+	NumRowGroups int32   `json:"num_row_groups"`
+	CreatedAt    int64   `json:"created_at"`
 }
 
 // ColumnChunk represents a chunk of column data
 type ColumnChunk struct {
-	ColumnName   string `json:"column_name"`
-	ColumnType   int32  `json:"column_type"`
-	NumValues    int64  `json:"num_values"`
-	DataOffset   int64  `json:"data_offset"`
-	DataSize     int64  `json:"data_size"`
-	NullCount    int64  `json:"null_count"`
-	MinValue     []byte `json:"min_value,omitempty"`
-	MaxValue     []byte `json:"max_value,omitempty"`
-	Compression  int32  `json:"compression"`
+	ColumnName  string `json:"column_name"`
+	ColumnType  int32  `json:"column_type"`
+	NumValues   int64  `json:"num_values"`
+	DataOffset  int64  `json:"data_offset"`
+	DataSize    int64  `json:"data_size"`
+	NullCount   int64  `json:"null_count"`
+	MinValue    []byte `json:"min_value,omitempty"`
+	MaxValue    []byte `json:"max_value,omitempty"`
+	Compression int32  `json:"compression"`
 }
 
 // RowGroupMetadata represents metadata for a row group
 type RowGroupMetadata struct {
-	NumRows      int64         `json:"num_rows"`
-	TotalSize    int64         `json:"total_size"`
-	Columns      []ColumnChunk `json:"columns"`
+	NumRows   int64         `json:"num_rows"`
+	TotalSize int64         `json:"total_size"`
+	Columns   []ColumnChunk `json:"columns"`
 }
 
 // FileFooter represents the footer of a columnar file
@@ -62,11 +62,11 @@ const (
 
 // Writer writes data in columnar format
 type Writer struct {
-	schema       *Schema
-	file         *os.File
+	schema         *Schema
+	file           *os.File
 	bufferedWriter *bufio.Writer
-	path         string
-	logger       *logger.Logger
+	path           string
+	logger         *logger.Logger
 
 	// Row group buffering
 	rowGroupSize int
@@ -74,13 +74,13 @@ type Writer struct {
 	numRows      int64
 
 	// Statistics
-	rowGroups    []RowGroupMetadata
-	nullCounts   map[string]int64
-	minValues    map[string]interface{}
-	maxValues    map[string]interface{}
+	rowGroups  []RowGroupMetadata
+	nullCounts map[string]int64
+	minValues  map[string]interface{}
+	maxValues  map[string]interface{}
 
-	mu           sync.Mutex
-	closed       bool
+	mu     sync.Mutex
+	closed bool
 }
 
 // WriterConfig contains configuration for the writer
@@ -102,17 +102,17 @@ func NewWriter(path string, schema *Schema, logger *logger.Logger) (*Writer, err
 	}
 
 	writer := &Writer{
-		schema:       schema,
-		file:         file,
+		schema:         schema,
+		file:           file,
 		bufferedWriter: bufio.NewWriterSize(file, 256*1024), // 256KB buffer
-		path:         path,
-		logger:       logger,
-		rowGroupSize: DefaultRowGroupSize,
-		buffer:       make([]map[string]interface{}, 0, DefaultRowGroupSize),
-		nullCounts:   make(map[string]int64),
-		minValues:    make(map[string]interface{}),
-		maxValues:    make(map[string]interface{}),
-		rowGroups:    make([]RowGroupMetadata, 0),
+		path:           path,
+		logger:         logger,
+		rowGroupSize:   DefaultRowGroupSize,
+		buffer:         make([]map[string]interface{}, 0, DefaultRowGroupSize),
+		nullCounts:     make(map[string]int64),
+		minValues:      make(map[string]interface{}),
+		maxValues:      make(map[string]interface{}),
+		rowGroups:      make([]RowGroupMetadata, 0),
 	}
 
 	// Write placeholder header
@@ -224,8 +224,8 @@ func (w *Writer) Close() error {
 
 	w.closed = true
 	w.logger.WithFields(map[string]interface{}{
-		"path":      w.path,
-		"num_rows":  w.numRows,
+		"path":       w.path,
+		"num_rows":   w.numRows,
 		"row_groups": len(w.rowGroups),
 	}).Info("Columnar file writer closed")
 
@@ -270,8 +270,8 @@ func (w *Writer) flushRowGroup() error {
 	}
 
 	rowGroup := RowGroupMetadata{
-		NumRows:   int64(len(w.buffer)),
-		Columns:   make([]ColumnChunk, 0, len(w.schema.Columns)),
+		NumRows: int64(len(w.buffer)),
+		Columns: make([]ColumnChunk, 0, len(w.schema.Columns)),
 	}
 
 	// Write each column
@@ -332,10 +332,10 @@ func (w *Writer) flushRowGroup() error {
 	w.buffer = w.buffer[:0] // Clear buffer
 
 	w.logger.WithFields(map[string]interface{}{
-		"rows":       rowGroup.NumRows,
-		"columns":    len(rowGroup.Columns),
-		"size":       rowGroup.TotalSize,
-		"row_group":  len(w.rowGroups),
+		"rows":      rowGroup.NumRows,
+		"columns":   len(rowGroup.Columns),
+		"size":      rowGroup.TotalSize,
+		"row_group": len(w.rowGroups),
 	}).Debug("Flushed row group")
 
 	return nil
@@ -489,93 +489,6 @@ func (w *Writer) writeFooter() error {
 	}
 
 	return nil
-}
-
-// valueToBytes converts a value to bytes for min/max storage
-func valueToBytes(v interface{}) []byte {
-	if v == nil {
-		return nil
-	}
-
-	switch val := v.(type) {
-	case bool:
-		if val {
-			return []byte{1}
-		}
-		return []byte{0}
-	case int32:
-		b := make([]byte, 4)
-		binary.LittleEndian.PutUint32(b, uint32(val))
-		return b
-	case int64, int:
-		b := make([]byte, 8)
-		binary.LittleEndian.PutUint64(b, uint64(val.(int64)))
-		return b
-	case float32:
-		b := make([]byte, 4)
-		binary.LittleEndian.PutUint32(b, uint32(val))
-		return b
-	case float64:
-		b := make([]byte, 8)
-		binary.LittleEndian.PutUint64(b, uint64(val))
-		return b
-	case string:
-		return []byte(val)
-	default:
-		return []byte(fmt.Sprintf("%v", v))
-	}
-}
-
-// compareValues compares two values
-func compareValues(a, b interface{}) int {
-	switch av := a.(type) {
-	case int:
-		bv, ok := b.(int)
-		if !ok {
-			return 0
-		}
-		if av < bv {
-			return -1
-		} else if av > bv {
-			return 1
-		}
-		return 0
-	case int64:
-		bv, ok := b.(int64)
-		if !ok {
-			return 0
-		}
-		if av < bv {
-			return -1
-		} else if av > bv {
-			return 1
-		}
-		return 0
-	case float64:
-		bv, ok := b.(float64)
-		if !ok {
-			return 0
-		}
-		if av < bv {
-			return -1
-		} else if av > bv {
-			return 1
-		}
-		return 0
-	case string:
-		bv, ok := b.(string)
-		if !ok {
-			return 0
-		}
-		if av < bv {
-			return -1
-		} else if av > bv {
-			return 1
-		}
-		return 0
-	default:
-		return 0
-	}
 }
 
 // NumRows returns the total number of rows written
