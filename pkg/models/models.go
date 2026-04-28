@@ -3,6 +3,8 @@ package models
 import (
 	"encoding/json"
 	"time"
+
+	"github.com/google/uuid"
 )
 
 // ChangeType represents the type of data change
@@ -55,7 +57,7 @@ func NewDataChange(changeType ChangeType, database, table string) *DataChange {
 
 // generateID generates a unique ID for the change event
 func generateID() string {
-	return time.Now().UTC().Format("20060102150405.000000000")
+	return uuid.New().String()
 }
 
 // ToJSON converts the DataChange to JSON bytes

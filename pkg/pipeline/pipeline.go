@@ -223,7 +223,10 @@ func (p *Pipeline) initFilters() error {
 	for _, rule := range p.cfg.Processing.Filters {
 		filter, err := parseFilterRule(rule)
 		if err != nil {
-			return fmt.Errorf("failed to parse filter rule '%s': %w", rule, err)
+			p.logger.WithFields(map[string]interface{}{
+				"rule": rule,
+			}).Warn("Filter rule parsing not yet implemented, using NoOp filter (data will pass through unchanged)")
+			filter = &NoOpFilter{}
 		}
 		p.AddFilter(filter)
 	}
@@ -235,7 +238,10 @@ func (p *Pipeline) initTransformers() error {
 	for _, rule := range p.cfg.Processing.Transforms {
 		transformer, err := parseTransformRule(rule)
 		if err != nil {
-			return fmt.Errorf("failed to parse transform rule '%s': %w", rule, err)
+			p.logger.WithFields(map[string]interface{}{
+				"rule": rule,
+			}).Warn("Transform rule parsing not yet implemented, using NoOp transformer (data will pass through unchanged)")
+			transformer = &NoOpTransformer{}
 		}
 		p.AddTransformer(transformer)
 	}
@@ -244,17 +250,12 @@ func (p *Pipeline) initTransformers() error {
 
 // parseFilterRule parses a filter rule string
 func parseFilterRule(rule string) (Filter, error) {
-	// Simple filter parsing: column operator value
-	// Example: "age > 18", "status = 'active'"
-	// For now, return a no-op filter
-	return &NoOpFilter{}, nil
+	return nil, fmt.Errorf("filter rule parsing not yet implemented: remove '%s' from config filters", rule)
 }
 
 // parseTransformRule parses a transform rule string
 func parseTransformRule(rule string) (Transformer, error) {
-	// Simple transform parsing
-	// For now, return a no-op transformer
-	return &NoOpTransformer{}, nil
+	return nil, fmt.Errorf("transform rule parsing not yet implemented: remove '%s' from config transforms", rule)
 }
 
 // NoOpFilter is a filter that always returns true

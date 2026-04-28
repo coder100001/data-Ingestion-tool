@@ -153,45 +153,40 @@ func updateCheckpoint(ctx context.Context, manager *checkpoint.Manager, conn con
 	}
 }
 
-// shutdown performs graceful shutdown
+// shutdown performs graceful shutdown with a 30-second timeout
 func shutdown(log *logger.Logger, conn connector.Connector, pipe *pipeline.Pipeline, manager *checkpoint.Manager) {
 	log.Info("Shutting down gracefully...")
 
-	// Stop connector
-	if err := conn.Stop(); err != nil {
-		log.WithError(err).Error("Error stopping connector")
+	done := make(chan struct{})
+	go func() {
+		defer close(done)
+
+		if err := conn.Stop(); err != nil {
+			log.WithError(err).Error("Error stopping connector")
+		}
+
+		if err := pipe.Stop(); err != nil {
+			log.WithError(err).Error("Error stopping pipeline")
+		}
+
+		if err := manager.Stop(); err != nil {
+			log.WithError(err).Error("Error stopping checkpoint manager")
+		}
+	}()
+
+	select {
+	case <-done:
+		log.Info("Shutdown complete")
+	case <-time.After(30 * time.Second):
+		log.Error("Shutdown timed out after 30 seconds, attempting emergency checkpoint save")
+
+		if err := manager.ForceSave(); err != nil {
+			log.WithError(err).Error("Failed to save emergency checkpoint")
+		} else {
+			log.Info("Emergency checkpoint saved successfully")
+		}
+
+		log.Error("Forcing exit due to shutdown timeout")
+		os.Exit(1)
 	}
-
-	// Stop pipeline
-	if err := pipe.Stop(); err != nil {
-		log.WithError(err).Error("Error stopping pipeline")
-	}
-
-	// Save final checkpoint
-	if err := manager.Stop(); err != nil {
-		log.WithError(err).Error("Error stopping checkpoint manager")
-	}
-
-	log.Info("Shutdown complete")
-}
-
-// handleError handles errors and decides whether to continue or exit
-func handleError(log *logger.Logger, err error, fatal bool) {
-	if fatal {
-		log.WithError(err).Fatal("Fatal error occurred")
-	} else {
-		log.WithError(err).Error("Error occurred")
-	}
-}
-
-// printStats prints ingestion statistics
-func printStats(log *logger.Logger, startTime time.Time, processedCount int64) {
-	duration := time.Since(startTime)
-	rate := float64(processedCount) / duration.Seconds()
-	
-	log.WithFields(map[string]interface{}{
-		"duration":        duration,
-		"processed_count": processedCount,
-		"rate_per_sec":    rate,
-	}).Info("Ingestion statistics")
 }

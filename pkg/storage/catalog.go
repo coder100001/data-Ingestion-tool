@@ -45,7 +45,8 @@ type SchemaVersion struct {
 	Checksum    string                 `json:"checksum"`
 }
 
-// ColumnInfo represents column metadata
+// CatalogColumnInfo represents column metadata in the data catalog.
+// Note: This is distinct from models.ColumnInfo which is used for CDC event schema.
 type ColumnInfo struct {
 	Name        string `json:"name"`
 	Type        string `json:"type"`

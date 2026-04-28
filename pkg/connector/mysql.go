@@ -21,7 +21,6 @@ type MySQLConnector struct {
 	BaseConnector
 	canal      *canal.Canal
 	handler    *binlogHandler
-	config     *canal.Config
 	syncer     *replication.BinlogSyncer
 	streamer   *replication.BinlogStreamer
 	mu         sync.RWMutex
@@ -30,7 +29,7 @@ type MySQLConnector struct {
 
 // binlogHandler handles binlog events
 type binlogHandler struct {
-	connector *MySQLConnector
+	connector  *MySQLConnector
 	changeChan chan<- *models.DataChange
 }
 
@@ -48,16 +47,6 @@ func (m *MySQLConnector) Connect(ctx context.Context) error {
 
 	mysqlCfg := m.cfg.Source.MySQL
 
-	// Create canal config
-	cfg := canal.NewDefaultConfig()
-	cfg.Addr = fmt.Sprintf("%s:%d", mysqlCfg.Host, mysqlCfg.Port)
-	cfg.User = mysqlCfg.User
-	cfg.Password = mysqlCfg.Password
-	cfg.ServerID = mysqlCfg.ServerID
-	cfg.Flavor = "mysql"
-	cfg.Dump.ExecutionPath = "" // Disable mysqldump
-
-	// Validate required fields
 	if mysqlCfg.Host == "" {
 		return fmt.Errorf("MySQL host is required")
 	}
@@ -71,16 +60,6 @@ func (m *MySQLConnector) Connect(ctx context.Context) error {
 		return fmt.Errorf("MySQL server_id is required (must be unique for replication)")
 	}
 
-	// Create canal instance
-	c, err := canal.NewCanal(cfg)
-	if err != nil {
-		return fmt.Errorf("failed to create canal: %w", err)
-	}
-
-	m.canal = c
-	m.config = cfg
-
-	// Set up binlog syncer for direct binlog reading
 	binlogCfg := replication.BinlogSyncerConfig{
 		ServerID: mysqlCfg.ServerID,
 		Flavor:   "mysql",
@@ -144,7 +123,7 @@ func (m *MySQLConnector) streamBinlog(ctx context.Context) {
 	}()
 
 	var pos mysql.Position
-	
+
 	// Use checkpoint position if available
 	if m.position.BinlogFile != "" {
 		pos = mysql.Position{
@@ -220,13 +199,13 @@ func (m *MySQLConnector) processEvent(event *replication.BinlogEvent) error {
 func (m *MySQLConnector) processTableMapEvent(e *replication.TableMapEvent) error {
 	database := string(e.Schema)
 	table := string(e.Table)
-	
+
 	if !m.shouldProcessTable(database, table) {
 		return nil
 	}
 
 	key := fmt.Sprintf("%s.%s", database, table)
-	
+
 	m.mu.Lock()
 	defer m.mu.Unlock()
 
@@ -235,7 +214,12 @@ func (m *MySQLConnector) processTableMapEvent(e *replication.TableMapEvent) erro
 		return nil
 	}
 
-	// Get table info from canal
+	// Get table info from canal (lazy init)
+	if m.canal == nil {
+		if err := m.initCanal(); err != nil {
+			return fmt.Errorf("failed to initialize canal for table info: %w", err)
+		}
+	}
 	tableInfo, err := m.canal.GetTable(database, table)
 	if err != nil {
 		return fmt.Errorf("failed to get table info: %w", err)
@@ -272,13 +256,13 @@ func (m *MySQLConnector) processTableMapEvent(e *replication.TableMapEvent) erro
 func (m *MySQLConnector) processRowsEvent(header *replication.EventHeader, e *replication.RowsEvent) error {
 	database := string(e.Table.Schema)
 	table := string(e.Table.Table)
-	
+
 	if !m.shouldProcessTable(database, table) {
 		return nil
 	}
 
 	key := fmt.Sprintf("%s.%s", database, table)
-	
+
 	m.mu.RLock()
 	tableInfo, exists := m.tableCache[key]
 	m.mu.RUnlock()
@@ -291,7 +275,7 @@ func (m *MySQLConnector) processRowsEvent(header *replication.EventHeader, e *re
 		}); err != nil {
 			m.logger.WithError(err).Warn("Failed to get table info")
 		}
-		
+
 		m.mu.RLock()
 		tableInfo = m.tableCache[key]
 		m.mu.RUnlock()
@@ -353,8 +337,12 @@ func (m *MySQLConnector) processRowsEvent(header *replication.EventHeader, e *re
 				"table":    table,
 				"type":     changeType,
 			}).Debug("Change event captured")
-		default:
-			m.logger.Warn("Change channel is full, dropping event")
+		case <-time.After(5 * time.Second):
+			m.logger.WithFields(map[string]interface{}{
+				"database": database,
+				"table":    table,
+				"type":     changeType,
+			}).Error("Timeout sending change to channel, dropping event")
 		}
 	}
 
@@ -364,7 +352,7 @@ func (m *MySQLConnector) processRowsEvent(header *replication.EventHeader, e *re
 // rowToMap converts a row to a map
 func (m *MySQLConnector) rowToMap(row []interface{}, tableInfo *models.TableInfo) map[string]interface{} {
 	result := make(map[string]interface{})
-	
+
 	if tableInfo == nil {
 		// Fallback: use column indices as keys
 		for i, val := range row {
@@ -379,7 +367,7 @@ func (m *MySQLConnector) rowToMap(row []interface{}, tableInfo *models.TableInfo
 			result[colName] = m.convertValue(val)
 		}
 	}
-	
+
 	return result
 }
 
@@ -391,11 +379,53 @@ func (m *MySQLConnector) convertValue(val interface{}) interface{} {
 
 	switch v := val.(type) {
 	case []byte:
-		// Try to convert to string
 		return string(v)
 	default:
 		return v
 	}
+}
+
+// shouldProcessTable checks if a table should be processed based on configuration
+func (m *MySQLConnector) shouldProcessTable(database, table string) bool {
+	fullName := fmt.Sprintf("%s.%s", database, table)
+
+	for _, exclude := range m.cfg.Source.MySQL.ExcludeTables {
+		if exclude == fullName || exclude == table {
+			return false
+		}
+	}
+
+	if len(m.cfg.Source.MySQL.Tables) == 0 {
+		return true
+	}
+
+	for _, include := range m.cfg.Source.MySQL.Tables {
+		if include == fullName || include == table {
+			return true
+		}
+	}
+
+	return false
+}
+
+// initCanal lazily initializes the canal instance for table schema queries
+func (m *MySQLConnector) initCanal() error {
+	mysqlCfg := m.cfg.Source.MySQL
+	cfg := canal.NewDefaultConfig()
+	cfg.Addr = fmt.Sprintf("%s:%d", mysqlCfg.Host, mysqlCfg.Port)
+	cfg.User = mysqlCfg.User
+	cfg.Password = mysqlCfg.Password
+	cfg.ServerID = mysqlCfg.ServerID
+	cfg.Flavor = "mysql"
+	cfg.Dump.ExecutionPath = ""
+
+	c, err := canal.NewCanal(cfg)
+	if err != nil {
+		return fmt.Errorf("failed to create canal: %w", err)
+	}
+
+	m.canal = c
+	return nil
 }
 
 // Stop stops the binlog capture
@@ -408,7 +438,7 @@ func (m *MySQLConnector) Stop() error {
 // GetTableInfo returns metadata about a table
 func (m *MySQLConnector) GetTableInfo(database, table string) (*models.TableInfo, error) {
 	key := fmt.Sprintf("%s.%s", database, table)
-	
+
 	m.mu.RLock()
 	if info, exists := m.tableCache[key]; exists {
 		m.mu.RUnlock()
@@ -416,9 +446,11 @@ func (m *MySQLConnector) GetTableInfo(database, table string) (*models.TableInfo
 	}
 	m.mu.RUnlock()
 
-	// Try to fetch from MySQL
+	// Try to fetch from MySQL (lazy init canal)
 	if m.canal == nil {
-		return nil, fmt.Errorf("canal not initialized")
+		if err := m.initCanal(); err != nil {
+			return nil, fmt.Errorf("failed to initialize canal: %w", err)
+		}
 	}
 
 	tableInfo, err := m.canal.GetTable(database, table)
@@ -496,10 +528,10 @@ func (h *binlogHandler) OnRotate(e *replication.RotateEvent) error {
 	return nil
 }
 
-// OnDDL implements canal.EventHandler  
+// OnDDL implements canal.EventHandler
 func (h *binlogHandler) OnDDL(nextPos mysql.Position, queryEvent *replication.QueryEvent) error {
 	query := string(queryEvent.Query)
-	
+
 	// Log DDL events
 	h.connector.logger.WithFields(map[string]interface{}{
 		"query": query,
@@ -532,7 +564,7 @@ func (h *binlogHandler) OnGTID(gtid mysql.GTIDSet) error {
 func (m *MySQLConnector) invalidateTableCache() {
 	m.mu.Lock()
 	defer m.mu.Unlock()
-	
+
 	m.tableCache = make(map[string]*models.TableInfo)
 	m.logger.Debug("Table cache invalidated")
 }

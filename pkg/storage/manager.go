@@ -195,9 +195,9 @@ func (m *Manager) writeJSON(change *models.DataChange) error {
 }
 
 // writeCompressedJSON writes compressed JSON data
+// TODO: Implement actual compression for JSON format
 func (m *Manager) writeCompressedJSON(change *models.DataChange) error {
-	// Delegate to JSON storage but compress the output
-	// This is a simplified implementation
+	m.logger.Warn("Compressed JSON storage is not yet implemented, writing uncompressed data")
 	return m.jsonStorage.Write(change)
 }
 

@@ -252,7 +252,7 @@ func TestBaseConnector_SetPosition(t *testing.T) {
 	}
 }
 
-func TestBaseConnector_shouldProcessTable(t *testing.T) {
+func TestMySQLConnector_shouldProcessTable(t *testing.T) {
 	tests := []struct {
 		name          string
 		tables        []string
@@ -361,9 +361,9 @@ func TestBaseConnector_shouldProcessTable(t *testing.T) {
 			}
 
 			log := newTestLogger(t)
-			bc := NewBaseConnector(cfg, log)
+			mc := NewMySQLConnector(cfg, log)
 
-			got := bc.shouldProcessTable(tt.database, tt.table)
+			got := mc.shouldProcessTable(tt.database, tt.table)
 			if got != tt.want {
 				t.Errorf("shouldProcessTable(%s, %s) = %v, want %v", tt.database, tt.table, got, tt.want)
 			}

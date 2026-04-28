@@ -111,21 +111,8 @@ processing:
   # - "mask:email:***"
   transforms: []
 
-# Advanced settings (optional)
-advanced:
-  # Retry configuration
-  retry:
-    max_attempts: 3
-    initial_delay_ms: 1000
-    max_delay_ms: 30000
-  
-  # Connection pool settings
-  connection_pool:
-    max_connections: 10
-    connection_timeout_sec: 30
-    read_timeout_sec: 60
-  
-  # Performance tuning
-  performance:
-    channel_buffer_size: 1000
-    flush_interval_sec: 5
+# Retry configuration
+retry:
+  max_retries: 3
+  initial_interval_ms: 1000
+  max_interval_ms: 30000

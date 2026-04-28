@@ -141,29 +141,41 @@ func (r *Reader) ReadAll() ([]map[string]interface{}, error) {
 	return rows, nil
 }
 
-// Seek seeks to a specific row
-func (r *Reader) Seek(rowNum int64) error {
+// Seek seeks to a specific row. Implements io.Seeker interface.
+// whence: 0 = offset from start, 1 = offset from current, 2 = offset from end
+func (r *Reader) Seek(offset int64, whence int) (int64, error) {
 	if r.closed {
-		return fmt.Errorf("reader is closed")
+		return 0, fmt.Errorf("reader is closed")
+	}
+
+	var rowNum int64
+	switch whence {
+	case 0:
+		rowNum = offset
+	case 1:
+		rowNum = r.currentRow + offset
+	case 2:
+		rowNum = r.header.NumRows + offset
+	default:
+		return 0, fmt.Errorf("invalid whence: %d", whence)
 	}
 
 	if rowNum < 0 || rowNum >= r.header.NumRows {
-		return fmt.Errorf("invalid row number: %d", rowNum)
+		return 0, fmt.Errorf("invalid row number: %d", rowNum)
 	}
 
-	// Find which row group contains this row
 	var currentRow int64
 	for i, rg := range r.footer.RowGroups {
 		if rowNum < currentRow+rg.NumRows {
 			r.currentRowGroup = i
 			r.currentRow = rowNum - currentRow
-			r.rowGroupData = nil // Force reload
-			return nil
+			r.rowGroupData = nil
+			return rowNum, nil
 		}
 		currentRow += rg.NumRows
 	}
 
-	return fmt.Errorf("row %d not found", rowNum)
+	return 0, fmt.Errorf("row %d not found", rowNum)
 }
 
 // GetRowGroupStatistics returns statistics for a row group

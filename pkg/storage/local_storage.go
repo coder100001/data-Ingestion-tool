@@ -218,6 +218,11 @@ func (s *LocalStorage) writeCSV(change *models.DataChange) error {
 		return fmt.Errorf("failed to write CSV record: %w", err)
 	}
 
+	estimatedSize := 0
+	for _, field := range record {
+		estimatedSize += len(field) + 1
+	}
+	s.fileSize += int64(estimatedSize)
 	s.recordCount++
 
 	return nil

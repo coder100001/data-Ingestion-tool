@@ -22,6 +22,7 @@ type Manager struct {
 	saveTimer    *time.Timer
 	dirty        bool
 	stopChan     chan struct{}
+	stopped      chan struct{}
 }
 
 // NewManager creates a new checkpoint manager
@@ -31,6 +32,7 @@ func NewManager(cfg *config.CheckpointConfig, logger *logger.Logger) (*Manager, 
 		logger:     logger,
 		checkpoint: nil,
 		stopChan:   make(chan struct{}),
+		stopped:    make(chan struct{}),
 	}
 
 	// Load existing checkpoint if available
@@ -119,6 +121,45 @@ func (m *Manager) Save() error {
 	return nil
 }
 
+// ForceSave forces a checkpoint save regardless of dirty flag
+// Used during emergency shutdown to preserve state
+func (m *Manager) ForceSave() error {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+
+	if m.checkpoint == nil {
+		m.logger.Warn("No checkpoint to save during emergency shutdown")
+		return nil
+	}
+
+	dir := filepath.Dir(m.cfg.StoragePath)
+	if err := os.MkdirAll(dir, 0755); err != nil {
+		return fmt.Errorf("failed to create checkpoint directory: %w", err)
+	}
+
+	data, err := json.MarshalIndent(m.checkpoint, "", "  ")
+	if err != nil {
+		return fmt.Errorf("failed to marshal checkpoint: %w", err)
+	}
+
+	tempPath := m.cfg.StoragePath + ".tmp"
+	if err := os.WriteFile(tempPath, data, 0644); err != nil {
+		return fmt.Errorf("failed to write checkpoint temp file: %w", err)
+	}
+
+	if err := os.Rename(tempPath, m.cfg.StoragePath); err != nil {
+		return fmt.Errorf("failed to rename checkpoint file: %w", err)
+	}
+
+	m.dirty = false
+	m.logger.WithFields(map[string]interface{}{
+		"path":     m.cfg.StoragePath,
+		"position": m.checkpoint.Position,
+	}).Info("Emergency checkpoint saved")
+
+	return nil
+}
+
 // GetCheckpoint returns the current checkpoint
 func (m *Manager) GetCheckpoint() *models.Checkpoint {
 	m.mu.RLock()
@@ -163,6 +204,7 @@ func (m *Manager) Initialize(sourceType string, position models.Position) {
 
 // autoSave periodically saves the checkpoint
 func (m *Manager) autoSave() {
+	defer close(m.stopped)
 	ticker := time.NewTicker(time.Duration(m.cfg.SaveIntervalSec) * time.Second)
 	defer ticker.Stop()
 
@@ -175,7 +217,6 @@ func (m *Manager) autoSave() {
 				}
 			}
 		case <-m.stopChan:
-			// Final save before stopping
 			if m.dirty {
 				if err := m.Save(); err != nil {
 					m.logger.WithError(err).Error("Failed to save checkpoint on stop")
@@ -189,13 +230,9 @@ func (m *Manager) autoSave() {
 // Stop stops the checkpoint manager
 func (m *Manager) Stop() error {
 	m.logger.Info("Stopping checkpoint manager...")
-	
+
 	close(m.stopChan)
-	
-	// Final save
-	if err := m.Save(); err != nil {
-		return fmt.Errorf("failed to save checkpoint on stop: %w", err)
-	}
+	<-m.stopped
 
 	m.logger.Info("Checkpoint manager stopped")
 	return nil

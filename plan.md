@@ -1,193 +1,200 @@
-# 代码推送计划
+# 代码审查问题修复计划
 
 ## 1. 需求概述
-- **功能名称**: DataLake 数据湖功能完善
-- **目标**: 推送 Parquet Reader、分层存储数据流转、数据质量验证等核心功能
-- **优先级**: P0
-- **截止日期**: 2024-01-28
+- **功能名称**: Data Ingestion Tool 代码审查问题修复
+- **目标**: 修复代码审查中发现的 21 个问题，按优先级分三批次处理
+- **优先级**: P0 (批次1) / P1 (批次2) / P2 (批次3)
+- **复杂度级别**: L2 (中等任务)
 
 ## 2. 变更范围
 
-### 2.1 新增文件
-| 文件路径 | 用途 | 行数预估 |
-|---------|------|---------|
-| `pkg/storage/parquet/reader.go` | Parquet 文件读取器 | ~400 |
-| `pkg/storage/parquet/util.go` | 公共工具函数 | ~170 |
-| `pkg/storage/parquet/util_test.go` | 工具函数单元测试 | ~200 |
-| `.trae/skills/superpowers-gstack-hybrid/SKILL.md` | AI 流程规范 | ~500 |
-| `GSTACK.md` | 工程演进规划 | ~600 |
+### 2.1 批次1 — P0 紧急修复 (L1 简单流程)
 
-### 2.2 修改文件
-| 文件路径 | 变更类型 | 影响范围 |
+| 文件路径 | 变更类型 | 问题描述 |
 |---------|---------|---------|
-| `pkg/storage/layered_storage.go` | 功能增强 | 新增 Bronze→Silver→Gold 数据流转 |
-| `pkg/storage/parquet/writer.go` | 代码重构 | 提取公共函数到 util.go |
+| `pkg/connector/mysql.go` | 修改 | #1 Channel 满时事件丢失，改为阻塞发送+超时 |
+| `pkg/models/models.go` | 修改 | #2 generateID 使用 UUID 替代时间戳 |
+| `Dockerfile` | 修改 | #8 COPY config.yaml 不存在，修复为 config.example.yaml |
+| `pkg/storage/parquet/reader.go` | 修改 | #9 Reader.Seek 签名不符合 io.Seeker |
+| `cmd/ingester/main.go` | 修改 | #16 删除未使用的 handleError 和 printStats 函数 |
 
-### 2.3 删除文件
-| 文件路径 | 原因 |
-|---------|------|
-| 无 | - |
+### 2.2 批次2 — P1 重要修复 (L2 标准流程)
+
+| 文件路径 | 变更类型 | 问题描述 |
+|---------|---------|---------|
+| `pkg/connector/connector.go` | 修改 | #3 shouldProcessTable 从 BaseConnector 移到 MySQLConnector |
+| `pkg/connector/mysql.go` | 修改 | #3 接收 shouldProcessTable 方法 |
+| `pkg/checkpoint/checkpoint.go` | 修改 | #4 Stop() 竞态条件修复 |
+| `pkg/storage/manager.go` | 修改 | #6 writeCompressedJSON 标记未实现 |
+| `pkg/pipeline/pipeline.go` | 修改 | #7 parseFilterRule/parseTransformRule 返回错误 |
+| `pkg/connector/mysql.go` | 修改 | #15 移除冗余 canal 实例 |
+| `pkg/storage/local_storage.go` | 修改 | #20 CSV 写入更新 fileSize |
+
+### 2.3 批次3 — P2 改进 (L2 标准流程)
+
+| 文件路径 | 变更类型 | 问题描述 |
+|---------|---------|---------|
+| `config.example.yaml` | 修改 | #10 统一配置文件与代码结构 |
+| `pkg/config/secrets.go` | 修改 | #11 unresolvedEnvVars 并发安全 |
+| `pkg/logger/logger.go` | 修改 | #12 fileHook 文件句柄释放 |
+| `pkg/storage/catalog.go` | 修改 | #13 ColumnInfo 重命名避免混淆 |
+| `cmd/ingester/main.go` | 修改 | #19 Graceful shutdown 超时控制 |
 
 ## 3. 逻辑设计
 
-### 3.1 核心流程
+### 3.1 批次1 核心变更
+
+#### #1 Channel 满时事件丢失
 ```
-┌─────────────────────────────────────────────────────────────┐
-│                    数据湖分层存储流程                         │
-├─────────────────────────────────────────────────────────────┤
-│                                                             │
-│   MySQL CDC                                                  │
-│      │                                                       │
-│      ▼                                                       │
-│   ┌─────────────┐    ┌─────────────┐    ┌─────────────┐    │
-│   │ Bronze Layer│───▶│ Silver Layer│───▶│  Gold Layer │    │
-│   │   (原始数据) │    │   (清洗数据) │    │   (聚合数据) │    │
-│   └─────────────┘    └─────────────┘    └─────────────┘    │
-│        │                    │                    │          │
-│        ▼                    ▼                    ▼          │
-│   JSON格式存储          Parquet格式            Parquet格式   │
-│   30天保留期            90天保留期             365天保留期    │
-│                                                             │
-└─────────────────────────────────────────────────────────────┘
+当前: select { case ch <- change: ...; default: drop }
+改为: select {
+        case ch <- change: ...
+        case <-time.After(5 * time.Second):
+            log.Error("Timeout sending to channel")
+            // 写入死信队列
+      }
 ```
 
-### 3.2 Parquet 文件格式
+#### #2 generateID 改用 UUID
 ```
-┌─────────────────────────────────────────────────────────────┐
-│                    Columnar File Format                     │
-├─────────────────────────────────────────────────────────────┤
-│  Header (Magic: "COL1", Version, Stats)                     │
-│  Row Group 1                                                │
-│    ├── Column Chunk 1 (Data + Null Bitmap + Stats)          │
-│    ├── Column Chunk 2                                       │
-│    └── ...                                                  │
-│  Row Group 2                                                │
-│  ...                                                        │
-│  Footer (Schema + Row Group Metadata + Size)                │
-└─────────────────────────────────────────────────────────────┘
+当前: time.Now().UTC().Format("20060102150405.000000000")
+改为: uuid.New().String()
 ```
 
-### 3.3 边界条件
+#### #8 Dockerfile 修复
+```
+当前: COPY --from=builder /app/config.yaml .
+改为: COPY --from=builder /app/config.example.yaml ./config.example.yaml
+```
+
+#### #9 Reader.Seek 签名修复
+```
+当前: Seek(rowNum int64) error
+改为: Seek(offset int64, whence int) (int64, error)
+```
+
+#### #16 删除未使用函数
+```
+删除: handleError(), printStats()
+```
+
+### 3.2 批次2 核心变更
+
+#### #3 shouldProcessTable 移到 MySQLConnector
+```
+从 BaseConnector 删除 shouldProcessTable
+在 MySQLConnector 中新增 shouldProcessTable 方法
+MySQLConnector.processRowsEvent 调用自己的 shouldProcessTable
+```
+
+#### #4 Checkpoint Stop 竞态修复
+```
+当前: close(stopChan) → Save()
+改为: 使用 sync.Once 保证只保存一次
+      autoSave 退出时保存，Stop() 等待 autoSave 退出
+```
+
+#### #6 压缩功能标记
+```
+writeCompressedJSON 添加日志警告和 TODO
+配置验证时若 compression != "none" 且 format != "parquet" 则警告
+```
+
+#### #7 Filter/Transform 解析器
+```
+当前: 返回 NoOp 实现（静默失败）
+改为: 返回错误 "filter/transform rules not yet implemented, remove from config"
+```
+
+#### #15 移除冗余 canal
+```
+Connect() 中不再创建 canal.Canal
+GetTableInfo() 改为直接查询 MySQL information_schema
+```
+
+#### #20 CSV fileSize 更新
+```
+writeCSV 中估算写入大小并更新 fileSize
+```
+
+### 3.3 批次3 核心变更
+
+#### #10 配置文件统一
+```
+移除 config.example.yaml 中的 advanced 节
+确保所有配置项与 Config 结构体对应
+```
+
+#### #11 unresolvedEnvVars 并发安全
+```
+改为使用 sync.Mutex 保护
+或改为在 ResolveSecrets 函数内局部变量
+```
+
+#### #12 Logger fileHook 释放
+```
+Logger 新增 Close() 方法
+fileHook 在 Close() 时关闭文件
+```
+
+#### #13 ColumnInfo 重命名
+```
+catalog.go 中的 ColumnInfo → CatalogColumnInfo
+避免与 models.ColumnInfo 混淆
+```
+
+#### #19 Graceful shutdown 超时
+```
+shutdown() 添加 30 秒超时
+超时后强制退出
+```
+
+## 4. 边界条件
+
 | 场景 | 输入 | 预期输出 | 处理方式 |
 |-----|------|---------|---------|
-| 空文件读取 | 不存在的文件 | 错误 | 返回 `fmt.Errorf` |
-| 大文件处理 | > 1GB | 分块读取 | 按 Row Group 加载 |
-| Schema 不匹配 | 字段类型不符 | 错误 | 类型转换失败时记录日志 |
-| 并发写入 | 多 goroutine | 线程安全 | 使用 `sync.Mutex` |
+| Channel 发送超时 | 5秒内无法发送 | 记录错误日志 | 超时后丢弃并记录 |
+| UUID 生成失败 | 极端情况 | 降级为时间戳 | 添加 fallback |
+| Checkpoint 并发保存 | Stop + autoSave 同时触发 | 只保存一次 | sync.Once |
+| CSV 文件大小估算 | 不精确 | 近似值 | 可接受 |
+| Shutdown 超时 | 30秒内未完成 | 强制退出 | os.Exit(1) |
 
-## 4. 接口设计
-
-### 4.1 Parquet Reader
-```go
-type Reader struct {
-    file         *os.File
-    header       FileHeader
-    footer       FileFooter
-    // ...
-}
-
-func NewReader(path string, logger *logger.Logger) (*Reader, error)
-func (r *Reader) Read() (map[string]interface{}, error)
-func (r *Reader) ReadRows(count int) ([]map[string]interface{}, error)
-func (r *Reader) Seek(rowNum int64) error
-```
-
-### 4.2 分层存储
-```go
-func (s *LayeredStorage) ProcessBronzeToSilver(database, table, date string) error
-func (s *LayeredStorage) ProcessSilverToGold(database, table, grain, date string) error
-```
-
-### 4.3 数据质量
-```go
-type DataCleaner interface {
-    Clean(data map[string]interface{}, rules []CleaningRule) (map[string]interface{}, error)
-}
-
-type DataValidator interface {
-    Validate(data map[string]interface{}, rules []ValidationRule) (*ValidationResult, error)
-}
-```
-
-## 5. 依赖分析
-
-### 5.1 内部依赖
-- `pkg/logger` - 日志记录
-- `pkg/models` - 数据模型
-- `pkg/storage/parquet` - 列式存储
-- `pkg/storage/schema` - Schema 管理
-
-### 5.2 外部依赖
-- 标准库: `encoding/binary`, `bufio`, `os`, `sync`
-- 无新增第三方依赖
-
-### 5.3 循环依赖风险
-- [x] 无风险
-- 依赖方向: layered_storage → parquet → 标准库
-
-## 6. 风险评估
+## 5. 风险评估
 
 | 风险类型 | 概率 | 影响 | 缓解措施 |
 |---------|------|------|---------|
-| 文件格式兼容性 | 低 | 高 | 版本号检查，向后兼容 |
-| 大文件内存溢出 | 中 | 高 | 按 Row Group 流式读取 |
-| 并发竞争条件 | 低 | 高 | 已使用 Mutex 保护 |
-| 数据丢失 | 低 | 高 | 先写临时文件，再重命名 |
+| Channel 行为变更 | 低 | 中 | 超时时间可配置 |
+| UUID 依赖 | 低 | 低 | 已在 go.mod 中 |
+| MySQL 查询替代 canal | 中 | 中 | 保留 canal 作为备选 |
+| 向后兼容 | 低 | 高 | Seek 签名变更可能影响调用方 |
 
-## 7. 测试策略
+## 6. 测试策略
 
-### 7.1 单元测试
+### 6.1 单元测试
 - 覆盖率目标: >= 80%
-- 关键路径: 100% 覆盖
-- 测试文件: `util_test.go` 已覆盖类型转换函数
+- 批次1: 修改的每个函数都需要测试
+- 批次2: 重点测试 checkpoint 竞态、filter/transform 错误返回
+- 批次3: 重点测试 logger Close、shutdown 超时
 
-### 7.2 集成测试
-- 测试场景: Parquet 读写完整流程
-- 测试场景: 分层存储数据流转
+### 6.2 回归测试
+- 每批次完成后运行 `go test ./...`
+- 确保现有测试不受影响
 
-### 7.3 性能测试
-- 基准: 10000 行数据读写 < 1s
-- 内存: 处理 1GB 文件 < 100MB 内存
+## 7. 验收标准
+- [ ] 所有 P0 问题已修复
+- [ ] 所有 P1 问题已修复
+- [ ] 所有 P2 问题已修复
+- [ ] `go vet ./...` 无错误
+- [ ] `go test ./...` 全部通过
+- [ ] `go build ./...` 编译成功
+- [ ] 无新增竞态条件 (`go test -race`)
 
-## 8. 验收标准
-- [x] 功能实现完整
-- [x] 测试覆盖率达标 (实际: 85%+)
-- [x] 性能指标满足
-- [x] 代码规范检查通过
-- [x] 无 race condition
-
-## 9. 提交信息规范
-
-```
-feat(storage): implement DataLake core features
-
-- Add Parquet Reader for columnar file format
-- Implement Bronze→Silver→Gold data flow
-- Add data quality validation engine
-- Extract common utilities to util.go
-- Fix float encoding in valueToBytes
-
-Closes: #datalake-enhancement
-```
-
-## 10. 推送前检查清单
-
-### 10.1 代码质量
-- [x] `go build ./...` 编译通过
-- [x] `go test ./...` 全部通过
-- [x] `go vet ./...` 无警告
-- [x] 无 race condition (`go test -race`)
-
-### 10.2 安全审查
-- [x] 无硬编码密码/密钥
-- [x] 无敏感信息泄露
-- [x] 文件权限正确 (0644/0755)
-
-### 10.3 文档更新
-- [x] GSTACK.md 工程演进规划
-- [x] SKILL.md AI 流程规范
+## 8. 回滚策略
+- 每批次独立提交，可单独回滚
+- 不涉及数据库迁移
+- 不涉及 API 变更（Seek 除外，但当前无外部调用方）
 
 ---
 **计划状态**: 待评审
-**创建时间**: 2024-01-28
-**最后更新**: 2024-01-28
+**创建时间**: 2026-04-28
+**最后更新**: 2026-04-28

@@ -36,7 +36,7 @@ WORKDIR /app
 COPY --from=builder /app/data-ingestion-tool .
 
 # Copy default config
-COPY --from=builder /app/config.yaml .
+COPY --from=builder /app/config.example.yaml ./config.example.yaml
 
 # Create directories for data
 RUN mkdir -p data-lake metadata logs && \

@@ -4,38 +4,36 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"sync"
 
 	"github.com/sirupsen/logrus"
 )
 
-// Logger wraps logrus.Logger with additional functionality
 type Logger struct {
 	*logrus.Logger
+	fileHook *fileHook
+	closeMu  sync.Once
 }
 
-// New creates a new logger instance
 func New(level, logFile string) (*Logger, error) {
 	log := logrus.New()
 
-	// Set log level
 	lvl, err := logrus.ParseLevel(level)
 	if err != nil {
 		return nil, fmt.Errorf("invalid log level: %w", err)
 	}
 	log.SetLevel(lvl)
 
-	// Set formatter
 	log.SetFormatter(&logrus.TextFormatter{
 		FullTimestamp:   true,
 		TimestampFormat: "2006-01-02 15:04:05",
 	})
 
-	// Add sanitize hook for log field sanitization
 	log.AddHook(NewSanitizeHook())
 
-	// Set output
+	logger := &Logger{Logger: log}
+
 	if logFile != "" {
-		// Create log directory if it doesn't exist
 		dir := filepath.Dir(logFile)
 		if err := os.MkdirAll(dir, 0755); err != nil {
 			return nil, fmt.Errorf("failed to create log directory: %w", err)
@@ -46,19 +44,30 @@ func New(level, logFile string) (*Logger, error) {
 			return nil, fmt.Errorf("failed to open log file: %w", err)
 		}
 
-		// Write to both file and stdout
 		log.SetOutput(os.Stdout)
-		log.AddHook(&fileHook{file: file})
+		fh := &fileHook{file: file}
+		log.AddHook(fh)
+		logger.fileHook = fh
 	} else {
 		log.SetOutput(os.Stdout)
 	}
 
-	return &Logger{log}, nil
+	return logger, nil
 }
 
-// fileHook writes logs to a file
+func (l *Logger) Close() error {
+	var err error
+	l.closeMu.Do(func() {
+		if l.fileHook != nil {
+			err = l.fileHook.Close()
+		}
+	})
+	return err
+}
+
 type fileHook struct {
 	file *os.File
+	mu   sync.Mutex
 }
 
 func (h *fileHook) Levels() []logrus.Level {
@@ -70,21 +79,33 @@ func (h *fileHook) Fire(entry *logrus.Entry) error {
 	if err != nil {
 		return err
 	}
-	_, err = h.file.WriteString(line)
+	h.mu.Lock()
+	defer h.mu.Unlock()
+	if h.file != nil {
+		_, err = h.file.WriteString(line)
+	}
 	return err
 }
 
-// WithField adds a field to the logger
+func (h *fileHook) Close() error {
+	h.mu.Lock()
+	defer h.mu.Unlock()
+	if h.file != nil {
+		err := h.file.Close()
+		h.file = nil
+		return err
+	}
+	return nil
+}
+
 func (l *Logger) WithField(key string, value interface{}) *logrus.Entry {
 	return l.Logger.WithField(key, value)
 }
 
-// WithFields adds multiple fields to the logger
 func (l *Logger) WithFields(fields logrus.Fields) *logrus.Entry {
 	return l.Logger.WithFields(fields)
 }
 
-// WithError adds an error field to the logger
 func (l *Logger) WithError(err error) *logrus.Entry {
 	return l.Logger.WithError(err)
 }

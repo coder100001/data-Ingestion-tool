@@ -99,29 +99,3 @@ func (bc *BaseConnector) SetPosition(position models.Position) error {
 	bc.position = position
 	return nil
 }
-
-// shouldProcessTable checks if a table should be processed based on configuration
-func (bc *BaseConnector) shouldProcessTable(database, table string) bool {
-	fullName := fmt.Sprintf("%s.%s", database, table)
-	
-	// Check exclude list first
-	for _, exclude := range bc.cfg.Source.MySQL.ExcludeTables {
-		if exclude == fullName || exclude == table {
-			return false
-		}
-	}
-	
-	// If include list is empty, process all tables
-	if len(bc.cfg.Source.MySQL.Tables) == 0 {
-		return true
-	}
-	
-	// Check include list
-	for _, include := range bc.cfg.Source.MySQL.Tables {
-		if include == fullName || include == table {
-			return true
-		}
-	}
-	
-	return false
-}

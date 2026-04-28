@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"os"
 	"strings"
+	"sync"
 )
 
 const (
@@ -12,7 +13,10 @@ const (
 	envVarSeparator = ":-"
 )
 
-var unresolvedEnvVars []string
+var (
+	unresolvedEnvVars []string
+	envVarsMu        sync.Mutex
+)
 
 func parseEnvVar(value string) (string, bool, bool) {
 	if value == "" {
@@ -39,7 +43,10 @@ func parseEnvVar(value string) (string, bool, bool) {
 		return envVal, true, true
 	}
 
+	envVarsMu.Lock()
 	unresolvedEnvVars = append(unresolvedEnvVars, inner)
+	envVarsMu.Unlock()
+
 	return "", true, false
 }
 

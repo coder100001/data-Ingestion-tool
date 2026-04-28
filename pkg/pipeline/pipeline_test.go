@@ -270,6 +270,8 @@ func TestStartWithFiltersAndTransforms(t *testing.T) {
 
 	p := NewPipeline(cfg, newTestLogger(), NewMockStorage())
 
+	// Backward compatibility: unsupported filter/transform rules should not fail startup
+	// They fall back to NoOp with a warning log
 	if err := p.Start(); err != nil {
 		t.Fatalf("Start failed: %v", err)
 	}
@@ -942,9 +944,9 @@ func TestParseFilterRule(t *testing.T) {
 		rule    string
 		wantErr bool
 	}{
-		{"simple rule", "age > 18", false},
-		{"empty rule", "", false},
-		{"complex rule", "status = 'active'", false},
+		{"simple rule", "age > 18", true},
+		{"empty rule", "", true},
+		{"complex rule", "status = 'active'", true},
 	}
 
 	for _, tt := range tests {
@@ -969,9 +971,9 @@ func TestParseTransformRule(t *testing.T) {
 		rule    string
 		wantErr bool
 	}{
-		{"simple rule", "add_timestamp", false},
-		{"empty rule", "", false},
-		{"complex rule", "mask_field(email)", false},
+		{"simple rule", "add_timestamp", true},
+		{"empty rule", "", true},
+		{"complex rule", "mask_field(email)", true},
 	}
 
 	for _, tt := range tests {
