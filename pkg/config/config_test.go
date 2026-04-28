@@ -167,6 +167,7 @@ func TestValidate(t *testing.T) {
 					Local: LocalConfig{
 						FileFormat:        "json",
 						PartitionStrategy: "date",
+						Compression:       "none",
 					},
 				},
 			},

@@ -78,11 +78,28 @@ type StorageConfig struct {
 
 // LocalConfig contains local storage settings
 type LocalConfig struct {
-	BasePath           string `yaml:"base_path"`
-	PartitionStrategy  string `yaml:"partition_strategy"`
-	FileFormat         string `yaml:"file_format"`
-	MaxFileSizeMB      int    `yaml:"max_file_size_mb"`
-	MaxRecordsPerFile  int    `yaml:"max_records_per_file"`
+	BasePath           string            `yaml:"base_path"`
+	PartitionStrategy  string            `yaml:"partition_strategy"`
+	FileFormat         string            `yaml:"file_format"`
+	Compression        string            `yaml:"compression"`
+	MaxFileSizeMB      int               `yaml:"max_file_size_mb"`
+	MaxRecordsPerFile  int               `yaml:"max_records_per_file"`
+	Parquet            ParquetConfig     `yaml:"parquet"`
+	Schema             SchemaConfig      `yaml:"schema"`
+}
+
+// ParquetConfig contains Parquet-specific settings
+type ParquetConfig struct {
+	RowGroupSize     int  `yaml:"row_group_size"`
+	PageSize         int  `yaml:"page_size"`
+	EnableDictionary bool `yaml:"enable_dictionary"`
+}
+
+// SchemaConfig contains schema registry settings
+type SchemaConfig struct {
+	RegistryPath   string `yaml:"registry_path"`
+	Compatibility  string `yaml:"compatibility"`
+	AutoRegister   bool   `yaml:"auto_register"`
 }
 
 // CheckpointConfig contains checkpoint settings
@@ -145,11 +162,26 @@ func (c *Config) setDefaults() {
 	if c.Storage.Local.FileFormat == "" {
 		c.Storage.Local.FileFormat = "json"
 	}
+	if c.Storage.Local.Compression == "" {
+		c.Storage.Local.Compression = "none"
+	}
 	if c.Storage.Local.MaxFileSizeMB == 0 {
 		c.Storage.Local.MaxFileSizeMB = 100
 	}
 	if c.Storage.Local.MaxRecordsPerFile == 0 {
 		c.Storage.Local.MaxRecordsPerFile = 10000
+	}
+	if c.Storage.Local.Parquet.RowGroupSize == 0 {
+		c.Storage.Local.Parquet.RowGroupSize = 10000
+	}
+	if c.Storage.Local.Parquet.PageSize == 0 {
+		c.Storage.Local.Parquet.PageSize = 8192
+	}
+	if c.Storage.Local.Schema.RegistryPath == "" {
+		c.Storage.Local.Schema.RegistryPath = "./metadata/schemas"
+	}
+	if c.Storage.Local.Schema.Compatibility == "" {
+		c.Storage.Local.Schema.Compatibility = "backward"
 	}
 	if c.Checkpoint.StoragePath == "" {
 		c.Checkpoint.StoragePath = "./metadata/checkpoint.json"
@@ -206,6 +238,11 @@ func (c *Config) Validate() error {
 	validFormats := map[string]bool{"json": true, "csv": true, "parquet": true}
 	if !validFormats[c.Storage.Local.FileFormat] {
 		return fmt.Errorf("unsupported file format: %s", c.Storage.Local.FileFormat)
+	}
+
+	validCompressions := map[string]bool{"none": true, "snappy": true, "gzip": true, "zstd": true}
+	if !validCompressions[c.Storage.Local.Compression] {
+		return fmt.Errorf("unsupported compression: %s", c.Storage.Local.Compression)
 	}
 
 	validStrategies := map[string]bool{"date": true, "hour": true, "none": true}
