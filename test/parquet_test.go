@@ -62,11 +62,11 @@ func TestParquetWriter(t *testing.T) {
 
 func TestParquetSchemaInference(t *testing.T) {
 	data := map[string]interface{}{
-		"id":        int64(1),
-		"name":      "Alice",
-		"active":    true,
-		"score":     95.5,
-		"age":       int32(30),
+		"id":         int64(1),
+		"name":       "Alice",
+		"active":     true,
+		"score":      95.5,
+		"age":        int32(30),
 		"created_at": time.Now(),
 	}
 

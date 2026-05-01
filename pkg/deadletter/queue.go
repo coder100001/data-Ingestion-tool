@@ -26,12 +26,12 @@ type DeadLetterRecord struct {
 
 // Queue handles dead letter queue operations
 type Queue struct {
-	path       string
-	maxSizeMB  int
-	mu         sync.Mutex
-	file       *os.File
-	writer     *bufio.Writer
-	size       int64
+	path        string
+	maxSizeMB   int
+	mu          sync.Mutex
+	file        *os.File
+	writer      *bufio.Writer
+	size        int64
 	recordCount int64
 }
 

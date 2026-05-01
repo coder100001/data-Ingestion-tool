@@ -22,20 +22,20 @@ const (
 // DataChange represents a single data change event
 type DataChange struct {
 	// Metadata
-	ID        string     `json:"id"`
-	Timestamp time.Time  `json:"timestamp"`
-	Source    string     `json:"source"`
-	
+	ID        string    `json:"id"`
+	Timestamp time.Time `json:"timestamp"`
+	Source    string    `json:"source"`
+
 	// Change information
-	Type       ChangeType             `json:"type"`
-	Database   string                 `json:"database"`
-	Table      string                 `json:"table"`
-	Schema     map[string]interface{} `json:"schema,omitempty"`
-	
+	Type     ChangeType             `json:"type"`
+	Database string                 `json:"database"`
+	Table    string                 `json:"table"`
+	Schema   map[string]interface{} `json:"schema,omitempty"`
+
 	// Data
 	Before map[string]interface{} `json:"before,omitempty"`
 	After  map[string]interface{} `json:"after,omitempty"`
-	
+
 	// Binlog position for checkpointing
 	BinlogFile string `json:"binlog_file"`
 	BinlogPos  uint32 `json:"binlog_pos"`
@@ -86,15 +86,15 @@ type Position struct {
 	// MySQL binlog position
 	BinlogFile string `json:"binlog_file,omitempty"`
 	BinlogPos  uint32 `json:"binlog_pos,omitempty"`
-	
+
 	// Kafka offset
-	Topic   string `json:"topic,omitempty"`
-	Partition int32 `json:"partition,omitempty"`
-	Offset  int64  `json:"offset,omitempty"`
-	
+	Topic     string `json:"topic,omitempty"`
+	Partition int32  `json:"partition,omitempty"`
+	Offset    int64  `json:"offset,omitempty"`
+
 	// PostgreSQL LSN
 	LSN string `json:"lsn,omitempty"`
-	
+
 	// Generic timestamp for other sources
 	Timestamp time.Time `json:"timestamp,omitempty"`
 }
@@ -115,10 +115,10 @@ func (cp *Checkpoint) UpdatePosition(pos Position) {
 
 // TableInfo represents metadata about a table
 type TableInfo struct {
-	Database string                 `json:"database"`
-	Table    string                 `json:"table"`
-	Columns  []ColumnInfo           `json:"columns"`
-	PrimaryKey []string             `json:"primary_key"`
+	Database   string       `json:"database"`
+	Table      string       `json:"table"`
+	Columns    []ColumnInfo `json:"columns"`
+	PrimaryKey []string     `json:"primary_key"`
 }
 
 // ColumnInfo represents metadata about a column

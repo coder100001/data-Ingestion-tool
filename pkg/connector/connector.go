@@ -13,25 +13,25 @@ import (
 type Connector interface {
 	// Connect establishes connection to the data source
 	Connect(ctx context.Context) error
-	
+
 	// Disconnect closes the connection
 	Disconnect() error
-	
+
 	// Start begins capturing data changes
 	Start(ctx context.Context, changeChan chan<- *models.DataChange) error
-	
+
 	// Stop stops capturing data changes
 	Stop() error
-	
+
 	// GetPosition returns the current position in the data source
 	GetPosition() models.Position
-	
+
 	// SetPosition sets the starting position for data capture
 	SetPosition(position models.Position) error
-	
+
 	// IsConnected returns true if the connector is connected
 	IsConnected() bool
-	
+
 	// GetTableInfo returns metadata about tables
 	GetTableInfo(database, table string) (*models.TableInfo, error)
 }

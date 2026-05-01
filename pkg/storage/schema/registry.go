@@ -36,19 +36,19 @@ type Registry struct {
 
 // SubjectSchemas holds all versions of a subject's schema
 type SubjectSchemas struct {
-	Subject      string          `json:"subject"`
-	Versions     []SchemaVersion `json:"versions"`
+	Subject       string            `json:"subject"`
+	Versions      []SchemaVersion   `json:"versions"`
 	Compatibility CompatibilityType `json:"compatibility"`
-	LatestVersion int             `json:"latest_version"`
+	LatestVersion int               `json:"latest_version"`
 }
 
 // SchemaVersion represents a single schema version
 type SchemaVersion struct {
-	Version     int                `json:"version"`
-	Schema      *parquet.Schema    `json:"schema"`
-	Timestamp   time.Time          `json:"timestamp"`
-	ID          string             `json:"id"`
-	Description string             `json:"description,omitempty"`
+	Version     int             `json:"version"`
+	Schema      *parquet.Schema `json:"schema"`
+	Timestamp   time.Time       `json:"timestamp"`
+	ID          string          `json:"id"`
+	Description string          `json:"description,omitempty"`
 }
 
 // NewRegistry creates a new schema registry

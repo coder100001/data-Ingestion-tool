@@ -437,7 +437,12 @@ func (m *MySQLConnector) initCanal() error {
 // Stop stops the binlog capture
 func (m *MySQLConnector) Stop() error {
 	m.logger.Info("Stopping MySQL binlog capture...")
-	close(m.stopChan)
+	select {
+	case <-m.stopChan:
+		// Already closed
+	default:
+		close(m.stopChan)
+	}
 	return nil
 }
 

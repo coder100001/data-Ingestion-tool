@@ -80,11 +80,11 @@ func main() {
 
 	// 模拟不同类型的数据变更
 	events := []struct {
-		typ      models.ChangeType
-		db       string
-		table    string
-		before   map[string]interface{}
-		after    map[string]interface{}
+		typ    models.ChangeType
+		db     string
+		table  string
+		before map[string]interface{}
+		after  map[string]interface{}
 	}{
 		{
 			typ:   models.Insert,
@@ -128,11 +128,11 @@ func main() {
 			db:    "ecommerce",
 			table: "orders",
 			after: map[string]interface{}{
-				"id":          1001,
-				"user_id":     1,
-				"total":       199.99,
-				"status":      "pending",
-				"created_at":  "2026-04-27T10:05:00Z",
+				"id":         1001,
+				"user_id":    1,
+				"total":      199.99,
+				"status":     "pending",
+				"created_at": "2026-04-27T10:05:00Z",
 			},
 		},
 		{
@@ -140,11 +140,11 @@ func main() {
 			db:    "ecommerce",
 			table: "orders",
 			after: map[string]interface{}{
-				"id":          1002,
-				"user_id":     2,
-				"total":       299.99,
-				"status":      "completed",
-				"created_at":  "2026-04-27T10:06:00Z",
+				"id":         1002,
+				"user_id":    2,
+				"total":      299.99,
+				"status":     "completed",
+				"created_at": "2026-04-27T10:06:00Z",
 			},
 		},
 		{

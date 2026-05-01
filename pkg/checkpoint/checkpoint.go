@@ -15,14 +15,13 @@ import (
 
 // Manager handles checkpoint operations
 type Manager struct {
-	cfg          *config.CheckpointConfig
-	logger       *logger.Logger
-	checkpoint   *models.Checkpoint
-	mu           sync.RWMutex
-	saveTimer    *time.Timer
-	dirty        bool
-	stopChan     chan struct{}
-	stopped      chan struct{}
+	cfg        *config.CheckpointConfig
+	logger     *logger.Logger
+	checkpoint *models.Checkpoint
+	mu         sync.RWMutex
+	dirty      bool
+	stopChan   chan struct{}
+	stopped    chan struct{}
 }
 
 // NewManager creates a new checkpoint manager
@@ -164,11 +163,11 @@ func (m *Manager) ForceSave() error {
 func (m *Manager) GetCheckpoint() *models.Checkpoint {
 	m.mu.RLock()
 	defer m.mu.RUnlock()
-	
+
 	if m.checkpoint == nil {
 		return nil
 	}
-	
+
 	// Return a copy
 	checkpointCopy := *m.checkpoint
 	return &checkpointCopy

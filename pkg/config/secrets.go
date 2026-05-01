@@ -15,7 +15,7 @@ const (
 
 var (
 	unresolvedEnvVars []string
-	envVarsMu        sync.Mutex
+	envVarsMu         sync.Mutex
 )
 
 func parseEnvVar(value string) (string, bool, bool) {

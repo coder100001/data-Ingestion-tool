@@ -181,8 +181,8 @@ func checkValidity(data map[string]interface{}) (bool, float64, string) {
 // checkTimeliness checks if timestamps are reasonable
 func checkTimeliness(data map[string]interface{}) (bool, float64, string) {
 	now := time.Now().UTC()
-	minTime := now.AddDate(-1, 0, 0)  // 1 year ago
-	maxTime := now.AddDate(0, 0, 1)   // 1 day in future
+	minTime := now.AddDate(-1, 0, 0) // 1 year ago
+	maxTime := now.AddDate(0, 0, 1)  // 1 day in future
 
 	timeFields := []string{"created_at", "updated_at", "timestamp", "time", "date"}
 	checkedCount := 0

@@ -25,7 +25,7 @@ func NewKafkaConnector(cfg *config.Config, logger *logger.Logger) *KafkaConnecto
 func (k *KafkaConnector) Connect(ctx context.Context) error {
 	k.logger.Info("Connecting to Kafka...")
 	// TODO: Implement Kafka connection
-	return fmt.Errorf("Kafka connector not yet implemented")
+	return fmt.Errorf("kafka connector not yet implemented")
 }
 
 // Disconnect closes the Kafka connection
@@ -39,7 +39,7 @@ func (k *KafkaConnector) Disconnect() error {
 func (k *KafkaConnector) Start(ctx context.Context, changeChan chan<- *models.DataChange) error {
 	k.logger.Info("Starting Kafka consumption...")
 	// TODO: Implement Kafka consumption
-	return fmt.Errorf("Kafka connector not yet implemented")
+	return fmt.Errorf("kafka connector not yet implemented")
 }
 
 // Stop stops consuming from Kafka

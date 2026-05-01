@@ -1,0 +1,77 @@
+version: "2"
+
+run:
+  timeout: 5m
+  tests: true
+  build-tags:
+    - integration
+
+linters:
+  enable:
+    - errcheck
+    - govet
+    - ineffassign
+    - staticcheck
+    - unused
+    - misspell
+    - gocritic
+    - prealloc
+    - bodyclose
+    - noctx
+    - sqlclosecheck
+
+formatters:
+  enable:
+    - gofmt
+    - goimports
+
+linters-settings:
+  errcheck:
+    check-type-assertions: true
+    check-blank: true
+  govet:
+    check-shadowing: true
+    enable-all: true
+  gocritic:
+    enabled-tags:
+      - diagnostic
+      - performance
+    disabled-checks:
+      - dupImport
+      - ifElseChain
+      - octalLiteral
+      - whyNoLint
+      - wrapperFunc
+      - assignOp
+      - singleCaseSwitch
+      - typeSwitchVar
+      - deprecatedComment
+      - commentFormatting
+  gofmt:
+    simplify: true
+  goimports:
+    local-prefixes: data-ingestion-tool
+  misspell:
+    locale: US
+
+issues:
+  exclude-rules:
+    - path: _test\.go
+      linters:
+        - errcheck
+        - dupl
+        - gocritic
+        - staticcheck
+    - path: config/config\.go
+      linters:
+        - gochecknoglobals
+    - path: main\.go
+      linters:
+        - gochecknoglobals
+    - path: demo/
+      linters:
+        - errcheck
+  exclude-dirs:
+    - pkg/storage/parquet
+  max-issues-per-linter: 100
+  max-same-issues: 20

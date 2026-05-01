@@ -15,21 +15,21 @@ import (
 func newTestConfig(t *testing.T, tmpDir, fileFormat string) *config.LocalConfig {
 	t.Helper()
 	return &config.LocalConfig{
-		BasePath:           tmpDir,
-		PartitionStrategy:  "date",
-		FileFormat:         fileFormat,
-		Compression:        "none",
-		MaxFileSizeMB:      100,
-		MaxRecordsPerFile:  10000,
-		Parquet:            config.ParquetConfig{
+		BasePath:          tmpDir,
+		PartitionStrategy: "date",
+		FileFormat:        fileFormat,
+		Compression:       "none",
+		MaxFileSizeMB:     100,
+		MaxRecordsPerFile: 10000,
+		Parquet: config.ParquetConfig{
 			RowGroupSize:     10000,
 			PageSize:         8192,
 			EnableDictionary: true,
 		},
-		Schema:             config.SchemaConfig{
-			RegistryPath:   filepath.Join(tmpDir, "schemas"),
-			Compatibility:  "backward",
-			AutoRegister:   true,
+		Schema: config.SchemaConfig{
+			RegistryPath:  filepath.Join(tmpDir, "schemas"),
+			Compatibility: "backward",
+			AutoRegister:  true,
 		},
 	}
 }
@@ -282,9 +282,9 @@ func TestLocalStorage_ConcurrentWrite(t *testing.T) {
 			defer wg.Done()
 			for i := 0; i < numWrites; i++ {
 				change := newTestDataChange(models.Insert, "testdb", "testtable", map[string]interface{}{
-					"id":          goroutineID*numWrites + i,
-					"goroutine":   goroutineID,
-					"iteration":   i,
+					"id":        goroutineID*numWrites + i,
+					"goroutine": goroutineID,
+					"iteration": i,
 				})
 				if err := storage.Write(change); err != nil {
 					errChan <- err

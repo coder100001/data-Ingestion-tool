@@ -21,28 +21,28 @@ type DataCatalog struct {
 
 // TableMetadata represents metadata for a table
 type TableMetadata struct {
-	TableName      string                 `json:"table_name"`
-	Database       string                 `json:"database"`
-	Source         string                 `json:"source"`
-	Schema         *SchemaVersion         `json:"schema"`
-	SchemaHistory  []SchemaVersion        `json:"schema_history"`
-	Partitions     []PartitionInfo        `json:"partitions"`
-	Statistics     *TableStatistics       `json:"statistics"`
-	Lineage        []LineageInfo          `json:"lineage"`
-	Quality        *DataQuality           `json:"quality"`
-	CreatedAt      time.Time              `json:"created_at"`
-	UpdatedAt      time.Time              `json:"updated_at"`
-	Properties     map[string]interface{} `json:"properties"`
+	TableName     string                 `json:"table_name"`
+	Database      string                 `json:"database"`
+	Source        string                 `json:"source"`
+	Schema        *SchemaVersion         `json:"schema"`
+	SchemaHistory []SchemaVersion        `json:"schema_history"`
+	Partitions    []PartitionInfo        `json:"partitions"`
+	Statistics    *TableStatistics       `json:"statistics"`
+	Lineage       []LineageInfo          `json:"lineage"`
+	Quality       *DataQuality           `json:"quality"`
+	CreatedAt     time.Time              `json:"created_at"`
+	UpdatedAt     time.Time              `json:"updated_at"`
+	Properties    map[string]interface{} `json:"properties"`
 }
 
 // SchemaVersion represents a schema version
 type SchemaVersion struct {
-	Version     int                    `json:"version"`
-	Columns     []ColumnInfo           `json:"columns"`
-	PrimaryKey  []string               `json:"primary_key"`
-	PartitionBy []string               `json:"partition_by"`
-	CreatedAt   time.Time              `json:"created_at"`
-	Checksum    string                 `json:"checksum"`
+	Version     int          `json:"version"`
+	Columns     []ColumnInfo `json:"columns"`
+	PrimaryKey  []string     `json:"primary_key"`
+	PartitionBy []string     `json:"partition_by"`
+	CreatedAt   time.Time    `json:"created_at"`
+	Checksum    string       `json:"checksum"`
 }
 
 // CatalogColumnInfo represents column metadata in the data catalog.
@@ -69,11 +69,11 @@ type PartitionInfo struct {
 
 // TableStatistics represents table statistics
 type TableStatistics struct {
-	TotalFiles      int64                  `json:"total_files"`
-	TotalRecords    int64                  `json:"total_records"`
-	TotalSizeBytes  int64                  `json:"total_size_bytes"`
-	ColumnStats     map[string]ColumnStats `json:"column_stats"`
-	LastAnalyzedAt  time.Time              `json:"last_analyzed_at"`
+	TotalFiles     int64                  `json:"total_files"`
+	TotalRecords   int64                  `json:"total_records"`
+	TotalSizeBytes int64                  `json:"total_size_bytes"`
+	ColumnStats    map[string]ColumnStats `json:"column_stats"`
+	LastAnalyzedAt time.Time              `json:"last_analyzed_at"`
 }
 
 // ColumnStats represents column-level statistics
@@ -87,21 +87,21 @@ type ColumnStats struct {
 
 // LineageInfo represents data lineage
 type LineageInfo struct {
-	Source       string    `json:"source"`
-	Transformation string  `json:"transformation"`
-	Timestamp    time.Time `json:"timestamp"`
-	Properties   map[string]interface{} `json:"properties"`
+	Source         string                 `json:"source"`
+	Transformation string                 `json:"transformation"`
+	Timestamp      time.Time              `json:"timestamp"`
+	Properties     map[string]interface{} `json:"properties"`
 }
 
 // DataQuality represents data quality metrics
 type DataQuality struct {
-	Completeness  float64           `json:"completeness"`
-	Uniqueness    float64           `json:"uniqueness"`
-	Validity      float64           `json:"validity"`
-	Timeliness    float64           `json:"timeliness"`
-	Consistency   float64           `json:"consistency"`
-	Checks        []QualityCheck    `json:"checks"`
-	LastCheckedAt time.Time         `json:"last_checked_at"`
+	Completeness  float64        `json:"completeness"`
+	Uniqueness    float64        `json:"uniqueness"`
+	Validity      float64        `json:"validity"`
+	Timeliness    float64        `json:"timeliness"`
+	Consistency   float64        `json:"consistency"`
+	Checks        []QualityCheck `json:"checks"`
+	LastCheckedAt time.Time      `json:"last_checked_at"`
 }
 
 // QualityCheck represents a single quality check
@@ -143,7 +143,7 @@ func (c *DataCatalog) RegisterTable(database, table, source string, schema *Sche
 	defer c.mu.Unlock()
 
 	key := fmt.Sprintf("%s.%s", database, table)
-	
+
 	now := time.Now().UTC()
 	metadata := &TableMetadata{
 		TableName:     table,

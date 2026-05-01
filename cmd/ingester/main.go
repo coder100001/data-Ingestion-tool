@@ -17,11 +17,11 @@ import (
 )
 
 var (
-	configPath = flag.String("config", "config.yaml", "Path to configuration file")
+	configPath      = flag.String("config", "config.yaml", "Path to configuration file")
 	resetCheckpoint = flag.Bool("reset", false, "Reset checkpoint and start from beginning")
-	version = "dev"
-	commit  = "unknown"
-	date    = "unknown"
+	version         = "dev"
+	commit          = "unknown"
+	date            = "unknown"
 )
 
 func main() {

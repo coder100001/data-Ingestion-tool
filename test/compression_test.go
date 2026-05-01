@@ -10,7 +10,7 @@ func TestCompressors(t *testing.T) {
 	testData := []byte(`{"id": 1, "name": "Alice", "description": "This is a test string that should be compressed well because it contains repeated patterns and common words that compression algorithms can optimize"}`)
 
 	compressors := []struct {
-		name      string
+		name       string
 		compressor compression.Compressor
 	}{
 		{"none", compression.NewNoOpCompressor()},
@@ -59,7 +59,7 @@ func TestCompressionRatio(t *testing.T) {
 	}
 
 	compressors := []struct {
-		name      string
+		name       string
 		compressor compression.Compressor
 	}{
 		{"gzip", compression.NewGzipCompressor()},
