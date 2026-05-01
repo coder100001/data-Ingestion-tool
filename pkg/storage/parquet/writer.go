@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"data-ingestion-tool/pkg/logger"
+	"data-ingestion-tool/pkg/util"
 )
 
 // FileHeader represents the header of a columnar file
@@ -145,10 +146,10 @@ func (w *Writer) WriteRow(row map[string]interface{}) error {
 		}
 
 		// Update min/max
-		if currentMin, exists := w.minValues[col.Name]; !exists || compareValues(value, currentMin) < 0 {
+		if currentMin, exists := w.minValues[col.Name]; !exists || util.CompareValues(value, currentMin) < 0 {
 			w.minValues[col.Name] = value
 		}
-		if currentMax, exists := w.maxValues[col.Name]; !exists || compareValues(value, currentMax) > 0 {
+		if currentMax, exists := w.maxValues[col.Name]; !exists || util.CompareValues(value, currentMax) > 0 {
 			w.maxValues[col.Name] = value
 		}
 	}

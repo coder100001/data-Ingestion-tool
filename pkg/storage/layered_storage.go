@@ -10,6 +10,7 @@ import (
 	"data-ingestion-tool/pkg/logger"
 	"data-ingestion-tool/pkg/models"
 	"data-ingestion-tool/pkg/storage/parquet"
+	"data-ingestion-tool/pkg/util"
 )
 
 // LayerType represents the storage layer type
@@ -773,13 +774,13 @@ func (v *DefaultDataValidator) Validate(data map[string]interface{}, rules []Val
 		case "range":
 			if exists && value != nil {
 				if min, ok := rule.Params["min"]; ok {
-					if compareValues(value, min) < 0 {
+					if util.CompareValues(value, min) < 0 {
 						result.Valid = false
 						result.Errors = append(result.Errors, fmt.Sprintf("Field '%s' is below minimum", rule.Field))
 					}
 				}
 				if max, ok := rule.Params["max"]; ok {
-					if compareValues(value, max) > 0 {
+					if util.CompareValues(value, max) > 0 {
 						result.Valid = false
 						result.Errors = append(result.Errors, fmt.Sprintf("Field '%s' is above maximum", rule.Field))
 					}
@@ -917,95 +918,5 @@ func checkType(value interface{}, expectedType string) bool {
 		return ok
 	default:
 		return true
-	}
-}
-
-// compareValues compares two values
-func compareValues(a, b interface{}) int {
-	if a == nil && b == nil {
-		return 0
-	}
-	if a == nil {
-		return -1
-	}
-	if b == nil {
-		return 1
-	}
-
-	switch av := a.(type) {
-	case int:
-		bv, ok := b.(int)
-		if !ok {
-			return 0
-		}
-		if av < bv {
-			return -1
-		}
-		if av > bv {
-			return 1
-		}
-		return 0
-	case int32:
-		bv, ok := b.(int32)
-		if !ok {
-			return 0
-		}
-		if av < bv {
-			return -1
-		}
-		if av > bv {
-			return 1
-		}
-		return 0
-	case int64:
-		bv, ok := b.(int64)
-		if !ok {
-			return 0
-		}
-		if av < bv {
-			return -1
-		}
-		if av > bv {
-			return 1
-		}
-		return 0
-	case float32:
-		bv, ok := b.(float32)
-		if !ok {
-			return 0
-		}
-		if av < bv {
-			return -1
-		}
-		if av > bv {
-			return 1
-		}
-		return 0
-	case float64:
-		bv, ok := b.(float64)
-		if !ok {
-			return 0
-		}
-		if av < bv {
-			return -1
-		}
-		if av > bv {
-			return 1
-		}
-		return 0
-	case string:
-		bv, ok := b.(string)
-		if !ok {
-			return 0
-		}
-		if av < bv {
-			return -1
-		}
-		if av > bv {
-			return 1
-		}
-		return 0
-	default:
-		return 0
 	}
 }

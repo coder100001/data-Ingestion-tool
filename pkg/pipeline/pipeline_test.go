@@ -12,13 +12,13 @@ import (
 )
 
 type MockStorage struct {
-	mu          sync.Mutex
-	writes      []*models.DataChange
-	flushCount  int
-	closeCount  int
-	writeError  error
-	flushError  error
-	closeError  error
+	mu         sync.Mutex
+	writes     []*models.DataChange
+	flushCount int
+	closeCount int
+	writeError error
+	flushError error
+	closeError error
 }
 
 func NewMockStorage() *MockStorage {
@@ -64,10 +64,10 @@ func (m *MockStorage) GetWriteCount() int {
 }
 
 type MockFilter struct {
-	mu       sync.Mutex
+	mu         sync.Mutex
 	shouldPass bool
-	callCount int
-	applyFunc func(change *models.DataChange) bool
+	callCount  int
+	applyFunc  func(change *models.DataChange) bool
 }
 
 func NewMockFilter(shouldPass bool) *MockFilter {
@@ -93,8 +93,8 @@ func (m *MockFilter) GetCallCount() int {
 }
 
 type MockTransformer struct {
-	mu        sync.Mutex
-	callCount int
+	mu            sync.Mutex
+	callCount     int
 	transformFunc func(change *models.DataChange) error
 }
 
@@ -289,16 +289,16 @@ func TestStartWithFiltersAndTransforms(t *testing.T) {
 
 func TestProcessChange(t *testing.T) {
 	tests := []struct {
-		name          string
-		filters       []Filter
-		transformers  []Transformer
-		change        *models.DataChange
-		expectWrite   bool
-		expectError   bool
+		name         string
+		filters      []Filter
+		transformers []Transformer
+		change       *models.DataChange
+		expectWrite  bool
+		expectError  bool
 	}{
 		{
-			name:        "no filters or transformers",
-			filters:     nil,
+			name:         "no filters or transformers",
+			filters:      nil,
 			transformers: nil,
 			change: &models.DataChange{
 				Type:     models.Insert,
@@ -310,8 +310,8 @@ func TestProcessChange(t *testing.T) {
 			expectError: false,
 		},
 		{
-			name: "filter passes",
-			filters: []Filter{NewMockFilter(true)},
+			name:         "filter passes",
+			filters:      []Filter{NewMockFilter(true)},
 			transformers: nil,
 			change: &models.DataChange{
 				Type:     models.Insert,
@@ -323,8 +323,8 @@ func TestProcessChange(t *testing.T) {
 			expectError: false,
 		},
 		{
-			name: "filter blocks",
-			filters: []Filter{NewMockFilter(false)},
+			name:         "filter blocks",
+			filters:      []Filter{NewMockFilter(false)},
 			transformers: nil,
 			change: &models.DataChange{
 				Type:     models.Insert,
@@ -336,8 +336,8 @@ func TestProcessChange(t *testing.T) {
 			expectError: false,
 		},
 		{
-			name:    "multiple filters all pass",
-			filters: []Filter{NewMockFilter(true), NewMockFilter(true)},
+			name:         "multiple filters all pass",
+			filters:      []Filter{NewMockFilter(true), NewMockFilter(true)},
 			transformers: nil,
 			change: &models.DataChange{
 				Type:     models.Insert,
@@ -349,8 +349,8 @@ func TestProcessChange(t *testing.T) {
 			expectError: false,
 		},
 		{
-			name:    "multiple filters one blocks",
-			filters: []Filter{NewMockFilter(true), NewMockFilter(false)},
+			name:         "multiple filters one blocks",
+			filters:      []Filter{NewMockFilter(true), NewMockFilter(false)},
 			transformers: nil,
 			change: &models.DataChange{
 				Type:     models.Insert,
@@ -362,8 +362,8 @@ func TestProcessChange(t *testing.T) {
 			expectError: false,
 		},
 		{
-			name:        "transformer modifies data",
-			filters:     nil,
+			name:         "transformer modifies data",
+			filters:      nil,
 			transformers: []Transformer{&AddTimestampTransformer{FieldName: "processed_at"}},
 			change: &models.DataChange{
 				Type:     models.Insert,
@@ -375,8 +375,8 @@ func TestProcessChange(t *testing.T) {
 			expectError: false,
 		},
 		{
-			name:        "filter and transformer",
-			filters:     []Filter{NewMockFilter(true)},
+			name:         "filter and transformer",
+			filters:      []Filter{NewMockFilter(true)},
 			transformers: []Transformer{NewMockTransformer()},
 			change: &models.DataChange{
 				Type:     models.Insert,
@@ -429,7 +429,7 @@ func TestColumnFilter(t *testing.T) {
 		shouldPass bool
 	}{
 		{
-			name: "equals operator - pass",
+			name:   "equals operator - pass",
 			filter: &ColumnFilter{Column: "status", Operator: "=", Value: "active"},
 			change: &models.DataChange{
 				Type:  models.Insert,
@@ -438,7 +438,7 @@ func TestColumnFilter(t *testing.T) {
 			shouldPass: true,
 		},
 		{
-			name: "equals operator - fail",
+			name:   "equals operator - fail",
 			filter: &ColumnFilter{Column: "status", Operator: "=", Value: "active"},
 			change: &models.DataChange{
 				Type:  models.Insert,
@@ -447,7 +447,7 @@ func TestColumnFilter(t *testing.T) {
 			shouldPass: false,
 		},
 		{
-			name: "not equals operator - pass",
+			name:   "not equals operator - pass",
 			filter: &ColumnFilter{Column: "status", Operator: "!=", Value: "active"},
 			change: &models.DataChange{
 				Type:  models.Insert,
@@ -456,7 +456,7 @@ func TestColumnFilter(t *testing.T) {
 			shouldPass: true,
 		},
 		{
-			name: "greater than operator - pass",
+			name:   "greater than operator - pass",
 			filter: &ColumnFilter{Column: "age", Operator: ">", Value: 18},
 			change: &models.DataChange{
 				Type:  models.Insert,
@@ -465,7 +465,7 @@ func TestColumnFilter(t *testing.T) {
 			shouldPass: true,
 		},
 		{
-			name: "greater than operator - fail",
+			name:   "greater than operator - fail",
 			filter: &ColumnFilter{Column: "age", Operator: ">", Value: 18},
 			change: &models.DataChange{
 				Type:  models.Insert,
@@ -474,7 +474,7 @@ func TestColumnFilter(t *testing.T) {
 			shouldPass: false,
 		},
 		{
-			name: "less than operator - pass",
+			name:   "less than operator - pass",
 			filter: &ColumnFilter{Column: "age", Operator: "<", Value: 100},
 			change: &models.DataChange{
 				Type:  models.Insert,
@@ -483,7 +483,7 @@ func TestColumnFilter(t *testing.T) {
 			shouldPass: true,
 		},
 		{
-			name: "greater than or equal - pass",
+			name:   "greater than or equal - pass",
 			filter: &ColumnFilter{Column: "age", Operator: ">=", Value: 18},
 			change: &models.DataChange{
 				Type:  models.Insert,
@@ -492,7 +492,7 @@ func TestColumnFilter(t *testing.T) {
 			shouldPass: true,
 		},
 		{
-			name: "less than or equal - pass",
+			name:   "less than or equal - pass",
 			filter: &ColumnFilter{Column: "age", Operator: "<=", Value: 18},
 			change: &models.DataChange{
 				Type:  models.Insert,
@@ -501,7 +501,7 @@ func TestColumnFilter(t *testing.T) {
 			shouldPass: true,
 		},
 		{
-			name: "column not exists",
+			name:   "column not exists",
 			filter: &ColumnFilter{Column: "nonexistent", Operator: "=", Value: "value"},
 			change: &models.DataChange{
 				Type:  models.Insert,
@@ -510,7 +510,7 @@ func TestColumnFilter(t *testing.T) {
 			shouldPass: false,
 		},
 		{
-			name: "delete operation uses before",
+			name:   "delete operation uses before",
 			filter: &ColumnFilter{Column: "status", Operator: "=", Value: "deleted"},
 			change: &models.DataChange{
 				Type:   models.Delete,
@@ -519,7 +519,7 @@ func TestColumnFilter(t *testing.T) {
 			shouldPass: true,
 		},
 		{
-			name: "unknown operator defaults to pass",
+			name:   "unknown operator defaults to pass",
 			filter: &ColumnFilter{Column: "status", Operator: "LIKE", Value: "%active%"},
 			change: &models.DataChange{
 				Type:  models.Insert,
@@ -581,13 +581,13 @@ func TestAddTimestampTransformerWithBefore(t *testing.T) {
 
 func TestMaskFieldTransformer(t *testing.T) {
 	tests := []struct {
-		name      string
+		name        string
 		transformer *MaskFieldTransformer
-		change    *models.DataChange
-		checkFunc func(t *testing.T, change *models.DataChange)
+		change      *models.DataChange
+		checkFunc   func(t *testing.T, change *models.DataChange)
 	}{
 		{
-			name: "mask email field",
+			name:        "mask email field",
 			transformer: &MaskFieldTransformer{Field: "email", Mask: "***", Length: 3},
 			change: &models.DataChange{
 				Type:  models.Insert,
@@ -600,7 +600,7 @@ func TestMaskFieldTransformer(t *testing.T) {
 			},
 		},
 		{
-			name: "mask short value",
+			name:        "mask short value",
 			transformer: &MaskFieldTransformer{Field: "code", Mask: "***", Length: 3},
 			change: &models.DataChange{
 				Type:  models.Insert,
@@ -613,7 +613,7 @@ func TestMaskFieldTransformer(t *testing.T) {
 			},
 		},
 		{
-			name: "mask non-existent field",
+			name:        "mask non-existent field",
 			transformer: &MaskFieldTransformer{Field: "nonexistent", Mask: "***", Length: 3},
 			change: &models.DataChange{
 				Type:  models.Insert,
@@ -626,7 +626,7 @@ func TestMaskFieldTransformer(t *testing.T) {
 			},
 		},
 		{
-			name: "mask nil value",
+			name:        "mask nil value",
 			transformer: &MaskFieldTransformer{Field: "email", Mask: "***", Length: 3},
 			change: &models.DataChange{
 				Type:  models.Insert,
@@ -675,65 +675,6 @@ func TestNoOpTransformer(t *testing.T) {
 	err := transformer.Transform(change)
 	if err != nil {
 		t.Errorf("NoOpTransformer should not return error: %v", err)
-	}
-}
-
-func TestCompareValues(t *testing.T) {
-	tests := []struct {
-		name     string
-		a        interface{}
-		b        interface{}
-		expected int
-	}{
-		{"int less", 5, 10, -1},
-		{"int equal", 10, 10, 0},
-		{"int greater", 15, 10, 1},
-		{"float less", 5.5, 10.5, -1},
-		{"float equal", 10.5, 10.5, 0},
-		{"string less", "a", "b", -1},
-		{"string equal", "test", "test", 0},
-		{"string greater", "z", "a", 1},
-		{"mixed numeric", 10, 10.0, 0},
-		{"string number", "10", 10, 0},
-	}
-
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			result := compareValues(tt.a, tt.b)
-			if result != tt.expected {
-				t.Errorf("compareValues(%v, %v) = %d, expected %d", tt.a, tt.b, result, tt.expected)
-			}
-		})
-	}
-}
-
-func TestToFloat64(t *testing.T) {
-	tests := []struct {
-		name     string
-		input    interface{}
-		expected float64
-		ok       bool
-	}{
-		{"float64", float64(10.5), 10.5, true},
-		{"float32", float32(10.5), 10.5, true},
-		{"int", int(10), 10.0, true},
-		{"int32", int32(10), 10.0, true},
-		{"int64", int64(10), 10.0, true},
-		{"string number", "10.5", 10.5, true},
-		{"string invalid", "not a number", 0, false},
-		{"bool", true, 0, false},
-	}
-
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			result, ok := toFloat64(tt.input)
-			if ok != tt.ok {
-				t.Errorf("toFloat64(%v) ok = %v, expected %v", tt.input, ok, tt.ok)
-			}
-			if ok && result != tt.expected {
-				t.Errorf("toFloat64(%v) = %f, expected %f", tt.input, result, tt.expected)
-			}
-		})
 	}
 }
 

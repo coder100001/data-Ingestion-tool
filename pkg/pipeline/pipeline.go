@@ -3,8 +3,6 @@ package pipeline
 import (
 	"context"
 	"fmt"
-	"strconv"
-	"strings"
 	"sync"
 	"time"
 
@@ -14,6 +12,7 @@ import (
 	"data-ingestion-tool/pkg/models"
 	"data-ingestion-tool/pkg/retry"
 	"data-ingestion-tool/pkg/storage"
+	"data-ingestion-tool/pkg/util"
 )
 
 // Pipeline handles data processing from source to storage
@@ -302,57 +301,15 @@ func (f *ColumnFilter) Apply(change *models.DataChange) bool {
 	case "!=":
 		return fmt.Sprintf("%v", value) != fmt.Sprintf("%v", f.Value)
 	case ">":
-		return compareValues(value, f.Value) > 0
+		return util.CompareValues(value, f.Value) > 0
 	case ">=":
-		return compareValues(value, f.Value) >= 0
+		return util.CompareValues(value, f.Value) >= 0
 	case "<":
-		return compareValues(value, f.Value) < 0
+		return util.CompareValues(value, f.Value) < 0
 	case "<=":
-		return compareValues(value, f.Value) <= 0
+		return util.CompareValues(value, f.Value) <= 0
 	default:
 		return true
-	}
-}
-
-// compareValues compares two values
-func compareValues(a, b interface{}) int {
-	// Try numeric comparison
-	aFloat, aOk := toFloat64(a)
-	bFloat, bOk := toFloat64(b)
-
-	if aOk && bOk {
-		if aFloat < bFloat {
-			return -1
-		} else if aFloat > bFloat {
-			return 1
-		}
-		return 0
-	}
-
-	// String comparison
-	aStr := fmt.Sprintf("%v", a)
-	bStr := fmt.Sprintf("%v", b)
-	return strings.Compare(aStr, bStr)
-}
-
-// toFloat64 converts a value to float64
-func toFloat64(v interface{}) (float64, bool) {
-	switch val := v.(type) {
-	case float64:
-		return val, true
-	case float32:
-		return float64(val), true
-	case int:
-		return float64(val), true
-	case int32:
-		return float64(val), true
-	case int64:
-		return float64(val), true
-	case string:
-		f, err := strconv.ParseFloat(val, 64)
-		return f, err == nil
-	default:
-		return 0, false
 	}
 }
 

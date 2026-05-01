@@ -9,6 +9,7 @@ import (
 	"os"
 
 	"data-ingestion-tool/pkg/logger"
+	"data-ingestion-tool/pkg/util"
 )
 
 // Reader reads data from columnar format files
@@ -222,10 +223,10 @@ func (r *Reader) GetColumnStatistics(columnName string) (*ColumnStatistics, erro
 		totalStats.NullCount += colStats.NullCount
 
 		// Update min/max
-		if totalStats.MinValue == nil || compareValues(colStats.MinValue, totalStats.MinValue) < 0 {
+		if totalStats.MinValue == nil || util.CompareValues(colStats.MinValue, totalStats.MinValue) < 0 {
 			totalStats.MinValue = colStats.MinValue
 		}
-		if totalStats.MaxValue == nil || compareValues(colStats.MaxValue, totalStats.MaxValue) > 0 {
+		if totalStats.MaxValue == nil || util.CompareValues(colStats.MaxValue, totalStats.MaxValue) > 0 {
 			totalStats.MaxValue = colStats.MaxValue
 		}
 	}
