@@ -10,46 +10,59 @@ Invoke skills by mentioning their name or purpose, e.g.:
 - *"Run code-review on pkg/connector"*
 - *"Write tests for layered_storage"*
 
-## 📦 Installed Skills
+## 📦 Installed Skills (22 Total)
 
-### 1. superpowers-gstack-hybrid (Default)
-**Purpose**: Enterprise-grade development workflow for Go projects.
-- **When to use**: Starting complex features, refactoring, production code
-- **Features**: TDD, multi-role reviews, design docs, performance benchmarks
+### Core Workflow Skills (from obra/superpowers)
 
-### 2. code-review
-**Purpose**: Comprehensive code reviews
-- **When to use**: Before merging PRs, self-reviewing code
+| Skill | Purpose | When to Use |
+|-------|---------|-------------|
+| **brainstorming** | Socratic design refinement | Before any code, refine rough ideas |
+| **writing-plans** | Detailed implementation plans | Breaking down features into tasks |
+| **executing-plans** | Batch execution with checkpoints | Running planned tasks |
+| **subagent-driven-development** | Fresh subagent per task | Complex multi-task features |
+| **dispatching-parallel-agents** | Concurrent subagent workflows | Independent parallel tasks |
+| **test-driven-development** | Strict RED-GREEN-REFACTOR | All production code |
+| **systematic-debugging** | 4-phase root cause process | Finding and fixing bugs |
+| **verification-before-completion** | Prove it's actually fixed | Before declaring done |
+| **using-git-worktrees** | Parallel development branches | Isolated feature development |
+| **requesting-code-review** | Pre-review checklist | Before merge/PR |
+| **receiving-code-review** | Responding to feedback | After code review |
+| **finishing-a-development-branch** | Merge/PR decision workflow | Completing a branch |
+| **using-superpowers** | Introduction to skills system | Learning the framework |
+| **writing-skills** | Create new skills | Extending the framework |
 
-### 3. test-driver
-**Purpose**: TDD-focused test writing
-- **When to use**: Adding tests, TDD workflow
+### Custom Skills (Project-Specific)
 
-### 4. refactorer
-**Purpose**: Safe refactoring
-- **When to use**: Restructuring code, improving design
-
-### 5. bug-hunter
-**Purpose**: Systematic debugging
-- **When to use**: Fixing bugs, troubleshooting issues
-
-### 6. security-auditor
-**Purpose**: Security vulnerability checks
-- **When to use**: Security reviews, compliance checks
-
-### 7. performance-tuner
-**Purpose**: Optimize performance
-- **When to use**: Profiling, benchmarking, speed improvements
-
-### 8. doc-writer
-**Purpose**: Documentation
-- **When to use**: Writing docs, API docs, design records
+| Skill | Purpose | When to Use |
+|-------|---------|-------------|
+| **superpowers-gstack-hybrid** | Enterprise-grade workflow for Go | Complex features, refactoring |
+| **code-review** | Comprehensive code reviews | Before merging PRs |
+| **test-driver** | TDD-focused test writing | Adding tests |
+| **refactorer** | Safe refactoring | Restructuring code |
+| **bug-hunter** | Systematic debugging | Fixing bugs |
+| **security-auditor** | Security vulnerability checks | Security reviews |
+| **performance-tuner** | Optimize performance | Profiling, benchmarking |
+| **doc-writer** | Documentation | Writing docs, API docs |
 
 ## 📁 Project Structure
 
 ```
 .trae/
-├── skills/              # All Superpowers skills
+├── skills/              # All Superpowers skills (22 total)
+│   ├── brainstorming/
+│   ├── writing-plans/
+│   ├── executing-plans/
+│   ├── subagent-driven-development/
+│   ├── test-driven-development/
+│   ├── systematic-debugging/
+│   ├── verification-before-completion/
+│   ├── using-git-worktrees/
+│   ├── requesting-code-review/
+│   ├── receiving-code-review/
+│   ├── finishing-a-development-branch/
+│   ├── using-superpowers/
+│   ├── writing-skills/
+│   ├── dispatching-parallel-agents/
 │   ├── superpowers-gstack-hybrid/
 │   ├── code-review/
 │   ├── test-driver/
@@ -98,30 +111,26 @@ Invoke skills by mentioning their name or purpose, e.g.:
 
 ### Adding a New Feature (Complex - L2/L3)
 ```
-1. Use "superpowers-gstack-hybrid"
-2. Write Design Doc
-3. Create PLAN.md
-4. Write tests first
-5. Implement
-6. Code review
-7. Test & verify
-8. Ship!
+1. Use "brainstorming" to refine the idea
+2. Use "writing-plans" to create detailed plan
+3. Use "using-git-worktrees" for isolation
+4. Use "subagent-driven-development" for implementation
+5. Use "requesting-code-review" for review
+6. Use "finishing-a-development-branch" to merge
 ```
 
 ### Fixing a Bug
 ```
-1. Use "bug-hunter"
-2. Reproduce issue
-3. Write failing test
-4. Fix bug
-5. Verify all tests pass
-6. Add regression test
-7. Self-review with "code-review"
+1. Use "systematic-debugging" to find root cause
+2. Use "test-driven-development" to write failing test
+3. Fix the bug
+4. Use "verification-before-completion" to prove fix
+5. Use "code-review" for self-review
 ```
 
 ### Refactoring
 ```
-1. Use "refactorer"
+1. Use "refactorer" for safe refactoring
 2. All tests passing first
 3. Small, focused changes
 4. Tests after each step
@@ -139,15 +148,19 @@ Invoke skills by mentioning their name or purpose, e.g.:
 
 ### Code Review
 ```
-1. Use "code-review"
-2. Check all categories (functionality, readability, perf, security, testing)
-3. Provide actionable feedback
-4. Approve or request changes
+1. Use "requesting-code-review" for pre-checklist
+2. Use "code-review" for comprehensive review
+3. Use "receiving-code-review" to respond to feedback
 ```
 
 ## 🔧 Configuration
 
 Check `trae.json` for project config.
+
+## 📚 Resources
+
+- [Superpowers Official Repo](https://github.com/obra/superpowers) - 57k+ stars
+- [Superpowers Skills Repo](https://github.com/obra/superpowers-skills) - Official skills library
 
 ---
 
