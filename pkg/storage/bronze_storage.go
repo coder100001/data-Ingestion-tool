@@ -61,10 +61,13 @@ func (s *LayeredStorage) WriteToBronze(change *models.DataChange) error {
 		Values: map[string]string{
 			"date": partition,
 		},
-		Path:      path,
-		FileCount: 1,
-		SizeBytes: int64(len(data)),
-		CreatedAt: time.Now().UTC(),
+		Path:        path,
+		FileCount:   1,
+		RecordCount: 1,
+		SizeBytes:   int64(len(data)),
+		MinTime:     record.IngestedAt,
+		MaxTime:     record.IngestedAt,
+		CreatedAt:   time.Now().UTC(),
 	}
 
 	if err := s.catalog.AddPartition(change.Database, change.Table, partitionInfo); err != nil {
