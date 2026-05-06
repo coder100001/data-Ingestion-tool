@@ -2,13 +2,16 @@ package connector
 
 import (
 	"context"
+	"reflect"
 	"testing"
+	"time"
 
 	"data-ingestion-tool/pkg/config"
 	"data-ingestion-tool/pkg/logger"
 	"data-ingestion-tool/pkg/models"
 
 	"github.com/go-mysql-org/go-mysql/mysql"
+	"github.com/go-mysql-org/go-mysql/replication"
 )
 
 func newTestLogger(t *testing.T) *logger.Logger {
@@ -156,8 +159,9 @@ func TestMySQLConnector_convertValue(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			got := mc.convertValue(tt.val)
-			if got != tt.want {
-				t.Errorf("convertValue(%v) = %v, want %v", tt.val, got, tt.want)
+			if !reflect.DeepEqual(got, tt.want) {
+				t.Errorf("convertValue(%v) = %v (type: %T), want %v (type: %T)",
+					tt.val, got, got, tt.want, tt.want)
 			}
 		})
 	}
@@ -900,5 +904,714 @@ func TestNewBaseConnector(t *testing.T) {
 
 	if bc.stopChan == nil {
 		t.Error("BaseConnector.stopChan should not be nil")
+	}
+}
+
+func TestMySQLConnector_convertValue_EdgeCases(t *testing.T) {
+	cfg := &config.Config{
+		Source: config.SourceConfig{
+			Type: "mysql",
+			MySQL: config.MySQLConfig{
+				Host:     "localhost",
+				Port:     3306,
+				User:     "root",
+				Password: "secret",
+				ServerID: 1001,
+			},
+		},
+	}
+	log := newTestLogger(t)
+	mc := NewMySQLConnector(cfg, log)
+
+	now := time.Now()
+	tests := []struct {
+		name string
+		val  interface{}
+		want interface{}
+	}{
+		{"int8", int8(8), int8(8)},
+		{"int16", int16(16), int16(16)},
+		{"int32", int32(32), int32(32)},
+		{"int64", int64(64), int64(64)},
+		{"uint", uint(42), uint(42)},
+		{"uint8", uint8(8), uint8(8)},
+		{"uint16", uint16(16), uint16(16)},
+		{"uint32", uint32(32), uint32(32)},
+		{"uint64", uint64(64), uint64(64)},
+		{"float32", float32(3.14), float32(3.14)},
+		{"time.Time", now, now},
+		{"empty string", "", ""},
+		{"byte slice with null bytes", []byte("hello\x00world"), "hello\x00world"},
+		{"nil pointer", (*int)(nil), (*int)(nil)},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := mc.convertValue(tt.val)
+			if got != tt.want {
+				t.Errorf("convertValue(%v) = %v, want %v", tt.val, got, tt.want)
+			}
+		})
+	}
+}
+
+func TestMySQLConnector_rowToMap_EdgeCases(t *testing.T) {
+	cfg := &config.Config{
+		Source: config.SourceConfig{
+			Type: "mysql",
+			MySQL: config.MySQLConfig{
+				Host:     "localhost",
+				Port:     3306,
+				User:     "root",
+				Password: "secret",
+				ServerID: 1001,
+			},
+		},
+	}
+	log := newTestLogger(t)
+	mc := NewMySQLConnector(cfg, log)
+
+	t.Run("nil row", func(t *testing.T) {
+		result := mc.rowToMap(nil, nil)
+		if result == nil {
+			t.Error("rowToMap(nil, nil) should return empty map, not nil")
+		}
+		if len(result) != 0 {
+			t.Errorf("rowToMap(nil, nil) should return empty map, got %d entries", len(result))
+		}
+	})
+
+	t.Run("empty row", func(t *testing.T) {
+		result := mc.rowToMap([]interface{}{}, nil)
+		if result == nil {
+			t.Error("rowToMap([], nil) should return empty map, not nil")
+		}
+		if len(result) != 0 {
+			t.Errorf("rowToMap([], nil) should return empty map, got %d entries", len(result))
+		}
+	})
+
+	t.Run("row longer than columns", func(t *testing.T) {
+		tableInfo := &models.TableInfo{
+			Database: "testdb",
+			Table:    "users",
+			Columns: []models.ColumnInfo{
+				{Name: "id", Type: "int"},
+			},
+		}
+		row := []interface{}{1, "unexpected"}
+		result := mc.rowToMap(row, tableInfo)
+		if result["id"] != 1 {
+			t.Errorf("rowToMap id = %v, want 1", result["id"])
+		}
+		if len(result) != 1 {
+			t.Errorf("rowToMap should have 1 entry for defined column, got %d", len(result))
+		}
+	})
+
+	t.Run("nil values in row", func(t *testing.T) {
+		tableInfo := &models.TableInfo{
+			Database: "testdb",
+			Table:    "users",
+			Columns: []models.ColumnInfo{
+				{Name: "id", Type: "int"},
+				{Name: "name", Type: "varchar"},
+			},
+		}
+		row := []interface{}{1, nil}
+		result := mc.rowToMap(row, tableInfo)
+		if result["id"] != 1 {
+			t.Errorf("rowToMap id = %v, want 1", result["id"])
+		}
+		if result["name"] != nil {
+			t.Errorf("rowToMap name = %v, want nil", result["name"])
+		}
+	})
+
+	t.Run("byte slice values converted via convertValue", func(t *testing.T) {
+		tableInfo := &models.TableInfo{
+			Database: "testdb",
+			Table:    "users",
+			Columns: []models.ColumnInfo{
+				{Name: "data", Type: "blob"},
+			},
+		}
+		row := []interface{}{[]byte("binary-data")}
+		result := mc.rowToMap(row, tableInfo)
+		if result["data"] != "binary-data" {
+			t.Errorf("rowToMap data = %v, want binary-data", result["data"])
+		}
+	})
+}
+
+func TestMySQLConnector_processEvent_Routing(t *testing.T) {
+	cfg := &config.Config{
+		Source: config.SourceConfig{
+			Type: "mysql",
+			MySQL: config.MySQLConfig{
+				Host:          "localhost",
+				Port:          3306,
+				User:          "root",
+				Password:      "secret",
+				ServerID:      1001,
+				Tables:        []string{"testdb.users"},
+				ExcludeTables: nil,
+			},
+		},
+	}
+	log := newTestLogger(t)
+	mc := NewMySQLConnector(cfg, log)
+
+	changeChan := make(chan *models.DataChange, 10)
+	mc.handler = &binlogHandler{
+		connector:  mc,
+		changeChan: changeChan,
+	}
+
+	t.Run("unknown event type returns nil", func(t *testing.T) {
+		event := &replication.BinlogEvent{
+			Header: &replication.EventHeader{
+				EventType: replication.ROTATE_EVENT,
+				LogPos:    100,
+			},
+		}
+		err := mc.processEvent(event)
+		if err != nil {
+			t.Errorf("processEvent() unexpected error: %v", err)
+		}
+	})
+
+	t.Run("nil event handler does not panic", func(t *testing.T) {
+		mcNoHandler := NewMySQLConnector(cfg, log)
+		event := &replication.BinlogEvent{
+			Header: &replication.EventHeader{
+				EventType: replication.QUERY_EVENT,
+				LogPos:    100,
+			},
+		}
+		err := mcNoHandler.processEvent(event)
+		if err != nil {
+			t.Errorf("processEvent() unexpected error: %v", err)
+		}
+	})
+}
+
+func TestMySQLConnector_processTableMapEvent_Cached(t *testing.T) {
+	cfg := &config.Config{
+		Source: config.SourceConfig{
+			Type: "mysql",
+			MySQL: config.MySQLConfig{
+				Host:          "localhost",
+				Port:          3306,
+				User:          "root",
+				Password:      "secret",
+				ServerID:      1001,
+				Tables:        []string{"testdb.users"},
+				ExcludeTables: nil,
+			},
+		},
+	}
+	log := newTestLogger(t)
+	mc := NewMySQLConnector(cfg, log)
+
+	key := "testdb.users"
+	mc.tableCache[key] = &models.TableInfo{
+		Database: "testdb",
+		Table:    "users",
+		Columns: []models.ColumnInfo{
+			{Name: "id", Type: "int"},
+		},
+	}
+
+	tme := &replication.TableMapEvent{
+		Schema: []byte("testdb"),
+		Table:  []byte("users"),
+	}
+
+	err := mc.processTableMapEvent(tme)
+	if err != nil {
+		t.Errorf("processTableMapEvent() unexpected error for cached table: %v", err)
+	}
+}
+
+func TestMySQLConnector_processRowsEvent_Insert(t *testing.T) {
+	cfg := &config.Config{
+		Source: config.SourceConfig{
+			Type: "mysql",
+			MySQL: config.MySQLConfig{
+				Host:          "localhost",
+				Port:          3306,
+				User:          "root",
+				Password:      "secret",
+				ServerID:      1001,
+				Tables:        []string{"testdb.users"},
+				ExcludeTables: nil,
+			},
+		},
+	}
+	log := newTestLogger(t)
+	mc := NewMySQLConnector(cfg, log)
+
+	changeChan := make(chan *models.DataChange, 10)
+	mc.handler = &binlogHandler{
+		connector:  mc,
+		changeChan: changeChan,
+	}
+	mc.position = models.Position{
+		BinlogFile: "mysql-bin.000001",
+		BinlogPos:  12345,
+	}
+
+	key := "testdb.users"
+	mc.tableCache[key] = &models.TableInfo{
+		Database: "testdb",
+		Table:    "users",
+		Columns: []models.ColumnInfo{
+			{Name: "id", Type: "int"},
+			{Name: "name", Type: "varchar(255)"},
+		},
+	}
+
+	header := &replication.EventHeader{
+		EventType: replication.WRITE_ROWS_EVENTv1,
+		LogPos:    200,
+	}
+
+	rowsEvent := &replication.RowsEvent{
+		Table: &replication.TableMapEvent{
+			Schema: []byte("testdb"),
+			Table:  []byte("users"),
+		},
+		Rows: [][]interface{}{
+			{1, "Alice"},
+		},
+	}
+
+	err := mc.processRowsEvent(header, rowsEvent)
+	if err != nil {
+		t.Errorf("processRowsEvent() unexpected error: %v", err)
+	}
+
+	select {
+	case change := <-changeChan:
+		if change.Type != models.Insert {
+			t.Errorf("Type = %v, want Insert", change.Type)
+		}
+		if change.Database != "testdb" {
+			t.Errorf("Database = %v, want testdb", change.Database)
+		}
+		if change.Table != "users" {
+			t.Errorf("Table = %v, want users", change.Table)
+		}
+		if change.BinlogFile != "mysql-bin.000001" {
+			t.Errorf("BinlogFile = %v, want mysql-bin.000001", change.BinlogFile)
+		}
+		if change.After["id"] != 1 || change.After["name"] != "Alice" {
+			t.Errorf("After data mismatch: got %v", change.After)
+		}
+	default:
+		t.Error("expected change event on channel, got none")
+	}
+}
+
+func TestMySQLConnector_processRowsEvent_Update(t *testing.T) {
+	cfg := &config.Config{
+		Source: config.SourceConfig{
+			Type: "mysql",
+			MySQL: config.MySQLConfig{
+				Host:          "localhost",
+				Port:          3306,
+				User:          "root",
+				Password:      "secret",
+				ServerID:      1001,
+				Tables:        []string{"testdb.users"},
+				ExcludeTables: nil,
+			},
+		},
+	}
+	log := newTestLogger(t)
+	mc := NewMySQLConnector(cfg, log)
+
+	changeChan := make(chan *models.DataChange, 10)
+	mc.handler = &binlogHandler{
+		connector:  mc,
+		changeChan: changeChan,
+	}
+	mc.position = models.Position{
+		BinlogFile: "mysql-bin.000001",
+		BinlogPos:  12345,
+	}
+
+	key := "testdb.users"
+	mc.tableCache[key] = &models.TableInfo{
+		Database: "testdb",
+		Table:    "users",
+		Columns: []models.ColumnInfo{
+			{Name: "id", Type: "int"},
+			{Name: "name", Type: "varchar(255)"},
+		},
+	}
+
+	header := &replication.EventHeader{
+		EventType: replication.UPDATE_ROWS_EVENTv1,
+		LogPos:    200,
+	}
+
+	rowsEvent := &replication.RowsEvent{
+		Table: &replication.TableMapEvent{
+			Schema: []byte("testdb"),
+			Table:  []byte("users"),
+		},
+		Rows: [][]interface{}{
+			{1, "Alice"},
+			{1, "AliceUpdated"},
+		},
+	}
+
+	err := mc.processRowsEvent(header, rowsEvent)
+	if err != nil {
+		t.Errorf("processRowsEvent() unexpected error: %v", err)
+	}
+
+	select {
+	case change := <-changeChan:
+		if change.Type != models.Update {
+			t.Errorf("Type = %v, want Update", change.Type)
+		}
+		if change.Before["id"] != 1 || change.Before["name"] != "Alice" {
+			t.Errorf("Before data mismatch: got %v", change.Before)
+		}
+		if change.After["name"] != "AliceUpdated" {
+			t.Errorf("After data mismatch: got %v", change.After)
+		}
+	default:
+		t.Error("expected change event on channel, got none")
+	}
+}
+
+func TestMySQLConnector_processRowsEvent_Delete(t *testing.T) {
+	cfg := &config.Config{
+		Source: config.SourceConfig{
+			Type: "mysql",
+			MySQL: config.MySQLConfig{
+				Host:          "localhost",
+				Port:          3306,
+				User:          "root",
+				Password:      "secret",
+				ServerID:      1001,
+				Tables:        []string{"testdb.users"},
+				ExcludeTables: nil,
+			},
+		},
+	}
+	log := newTestLogger(t)
+	mc := NewMySQLConnector(cfg, log)
+
+	changeChan := make(chan *models.DataChange, 10)
+	mc.handler = &binlogHandler{
+		connector:  mc,
+		changeChan: changeChan,
+	}
+	mc.position = models.Position{
+		BinlogFile: "mysql-bin.000001",
+		BinlogPos:  12345,
+	}
+
+	key := "testdb.users"
+	mc.tableCache[key] = &models.TableInfo{
+		Database: "testdb",
+		Table:    "users",
+		Columns: []models.ColumnInfo{
+			{Name: "id", Type: "int"},
+			{Name: "name", Type: "varchar(255)"},
+		},
+	}
+
+	header := &replication.EventHeader{
+		EventType: replication.DELETE_ROWS_EVENTv1,
+		LogPos:    200,
+	}
+
+	rowsEvent := &replication.RowsEvent{
+		Table: &replication.TableMapEvent{
+			Schema: []byte("testdb"),
+			Table:  []byte("users"),
+		},
+		Rows: [][]interface{}{
+			{1, "Alice"},
+		},
+	}
+
+	err := mc.processRowsEvent(header, rowsEvent)
+	if err != nil {
+		t.Errorf("processRowsEvent() unexpected error: %v", err)
+	}
+
+	select {
+	case change := <-changeChan:
+		if change.Type != models.Delete {
+			t.Errorf("Type = %v, want Delete", change.Type)
+		}
+		if change.Before["id"] != 1 || change.Before["name"] != "Alice" {
+			t.Errorf("Before data mismatch: got %v", change.Before)
+		}
+		if len(change.After) != 0 {
+			t.Error("After should be empty for Delete events")
+		}
+	default:
+		t.Error("expected change event on channel, got none")
+	}
+}
+
+func TestMySQLConnector_processRowsEvent_TableNotInIncludeList(t *testing.T) {
+	cfg := &config.Config{
+		Source: config.SourceConfig{
+			Type: "mysql",
+			MySQL: config.MySQLConfig{
+				Host:          "localhost",
+				Port:          3306,
+				User:          "root",
+				Password:      "secret",
+				ServerID:      1001,
+				Tables:        []string{"testdb.users"},
+				ExcludeTables: nil,
+			},
+		},
+	}
+	log := newTestLogger(t)
+	mc := NewMySQLConnector(cfg, log)
+	changeChan := make(chan *models.DataChange, 1)
+	mc.handler = &binlogHandler{
+		connector:  mc,
+		changeChan: changeChan,
+	}
+
+	header := &replication.EventHeader{
+		EventType: replication.WRITE_ROWS_EVENTv1,
+	}
+	rowsEvent := &replication.RowsEvent{
+		Table: &replication.TableMapEvent{
+			Schema: []byte("otherdb"),
+			Table:  []byte("other_table"),
+		},
+		Rows: [][]interface{}{{1}},
+	}
+
+	err := mc.processRowsEvent(header, rowsEvent)
+	if err != nil {
+		t.Errorf("processRowsEvent() should not error for excluded table: %v", err)
+	}
+
+	select {
+	case <-changeChan:
+		t.Error("should not send event for excluded table")
+	default:
+	}
+}
+
+func TestBinlogHandler_OnRotate(t *testing.T) {
+	cfg := &config.Config{
+		Source: config.SourceConfig{
+			Type: "mysql",
+			MySQL: config.MySQLConfig{
+				Host:     "localhost",
+				Port:     3306,
+				User:     "root",
+				Password: "secret",
+				ServerID: 1001,
+			},
+		},
+	}
+	log := newTestLogger(t)
+	mc := NewMySQLConnector(cfg, log)
+	handler := &binlogHandler{
+		connector: mc,
+	}
+
+	err := handler.OnRotate(&replication.RotateEvent{
+		NextLogName: []byte("mysql-bin.000002"),
+		Position:    4,
+	})
+	if err != nil {
+		t.Errorf("OnRotate() unexpected error: %v", err)
+	}
+}
+
+func TestBinlogHandler_OnDDL(t *testing.T) {
+	cfg := &config.Config{
+		Source: config.SourceConfig{
+			Type: "mysql",
+			MySQL: config.MySQLConfig{
+				Host:     "localhost",
+				Port:     3306,
+				User:     "root",
+				Password: "secret",
+				ServerID: 1001,
+			},
+		},
+	}
+	log := newTestLogger(t)
+	mc := NewMySQLConnector(cfg, log)
+
+	key := "testdb.users"
+	mc.tableCache[key] = &models.TableInfo{
+		Database: "testdb",
+		Table:    "users",
+	}
+
+	handler := &binlogHandler{
+		connector: mc,
+	}
+
+	t.Run("CREATE TABLE triggers cache invalidation", func(t *testing.T) {
+		err := handler.OnDDL(mysql.Position{}, &replication.QueryEvent{
+			Query: []byte("CREATE TABLE testdb.orders (id INT)"),
+		})
+		if err != nil {
+			t.Errorf("OnDDL() unexpected error: %v", err)
+		}
+		if len(mc.tableCache) != 0 {
+			t.Error("tableCache should be empty after CREATE TABLE DDL")
+		}
+	})
+
+	t.Run("non-table DDL does not panic", func(t *testing.T) {
+		mc.tableCache[key] = &models.TableInfo{
+			Database: "testdb",
+			Table:    "users",
+		}
+		err := handler.OnDDL(mysql.Position{}, &replication.QueryEvent{
+			Query: []byte("DROP INDEX idx ON users"),
+		})
+		if err != nil {
+			t.Errorf("OnDDL() unexpected error: %v", err)
+		}
+		if len(mc.tableCache) == 0 {
+			t.Error("tableCache should not be empty for non-table DDL")
+		}
+	})
+}
+
+func TestBinlogHandler_OnGTID(t *testing.T) {
+	cfg := &config.Config{
+		Source: config.SourceConfig{
+			Type: "mysql",
+			MySQL: config.MySQLConfig{
+				Host:     "localhost",
+				Port:     3306,
+				User:     "root",
+				Password: "secret",
+				ServerID: 1001,
+			},
+		},
+	}
+	log := newTestLogger(t)
+	mc := NewMySQLConnector(cfg, log)
+	handler := &binlogHandler{
+		connector: mc,
+	}
+
+	gtidSet, _ := mysql.ParseGTIDSet("mysql", "3E11FA47-61CA-11ED-9C7A-507B9D9E1A2A:1-10")
+	err := handler.OnGTID(gtidSet)
+	if err != nil {
+		t.Errorf("OnGTID() unexpected error: %v", err)
+	}
+}
+
+func TestBinlogHandler_OnPosSynced(t *testing.T) {
+	cfg := &config.Config{
+		Source: config.SourceConfig{
+			Type: "mysql",
+			MySQL: config.MySQLConfig{
+				Host:     "localhost",
+				Port:     3306,
+				User:     "root",
+				Password: "secret",
+				ServerID: 1001,
+			},
+		},
+	}
+	log := newTestLogger(t)
+	mc := NewMySQLConnector(cfg, log)
+	handler := &binlogHandler{
+		connector: mc,
+	}
+
+	pos := mysql.Position{
+		Name: "mysql-bin.000001",
+		Pos:  12345,
+	}
+	err := handler.OnPosSynced(pos, nil, false)
+	if err != nil {
+		t.Errorf("OnPosSynced() unexpected error: %v", err)
+	}
+
+	if mc.position.BinlogFile != "mysql-bin.000001" {
+		t.Errorf("BinlogFile = %v, want mysql-bin.000001", mc.position.BinlogFile)
+	}
+	if mc.position.BinlogPos != 12345 {
+		t.Errorf("BinlogPos = %v, want 12345", mc.position.BinlogPos)
+	}
+}
+
+func TestMySQLConnector_processTableMapEvent_ExcludedTable(t *testing.T) {
+	cfg := &config.Config{
+		Source: config.SourceConfig{
+			Type: "mysql",
+			MySQL: config.MySQLConfig{
+				Host:          "localhost",
+				Port:          3306,
+				User:          "root",
+				Password:      "secret",
+				ServerID:      1001,
+				Tables:        nil,
+				ExcludeTables: []string{"testdb.logs"},
+			},
+		},
+	}
+	log := newTestLogger(t)
+	mc := NewMySQLConnector(cfg, log)
+
+	tme := &replication.TableMapEvent{
+		Schema: []byte("testdb"),
+		Table:  []byte("logs"),
+	}
+
+	err := mc.processTableMapEvent(tme)
+	if err != nil {
+		t.Errorf("processTableMapEvent() should not error for excluded table: %v", err)
+	}
+}
+
+func TestMySQLConnector_processRowsEvent_UnknownEventType(t *testing.T) {
+	cfg := &config.Config{
+		Source: config.SourceConfig{
+			Type: "mysql",
+			MySQL: config.MySQLConfig{
+				Host:     "localhost",
+				Port:     3306,
+				User:     "root",
+				Password: "secret",
+				ServerID: 1001,
+			},
+		},
+	}
+	log := newTestLogger(t)
+	mc := NewMySQLConnector(cfg, log)
+
+	header := &replication.EventHeader{
+		EventType: replication.EventType(255),
+	}
+	rowsEvent := &replication.RowsEvent{
+		Table: &replication.TableMapEvent{
+			Schema: []byte("testdb"),
+			Table:  []byte("users"),
+		},
+		Rows: [][]interface{}{{1}},
+	}
+
+	err := mc.processRowsEvent(header, rowsEvent)
+	if err == nil {
+		t.Error("processRowsEvent() should error for unknown event type")
 	}
 }

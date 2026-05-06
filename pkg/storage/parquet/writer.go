@@ -209,13 +209,13 @@ func (w *Writer) Close() error {
 		return err
 	}
 
-	// Update header with final stats
-	if err := w.updateHeader(); err != nil {
+	// Flush buffered data before seeking to update header
+	if err := w.bufferedWriter.Flush(); err != nil {
 		return err
 	}
 
-	// Flush and close
-	if err := w.bufferedWriter.Flush(); err != nil {
+	// Update header with final stats
+	if err := w.updateHeader(); err != nil {
 		return err
 	}
 
@@ -297,6 +297,9 @@ func (w *Writer) flushRowGroup() error {
 		}
 
 		// Write column data
+		if err := w.bufferedWriter.Flush(); err != nil {
+			return err
+		}
 		dataOffset, err := w.file.Seek(0, io.SeekCurrent)
 		if err != nil {
 			return err
@@ -458,6 +461,10 @@ func (w *Writer) writeColumnData(data []interface{}, dataType Type) (int64, erro
 		}
 	}
 
+	if err := w.bufferedWriter.Flush(); err != nil {
+		return 0, err
+	}
+
 	endOffset, err := w.file.Seek(0, io.SeekCurrent)
 	if err != nil {
 		return 0, err
@@ -478,14 +485,13 @@ func (w *Writer) writeFooter() error {
 		return fmt.Errorf("failed to marshal footer: %w", err)
 	}
 
-	// Write footer size
-	footerSize := int64(len(footerData))
-	if err := binary.Write(w.bufferedWriter, binary.LittleEndian, footerSize); err != nil {
+	// Write footer data first, then footer size (reader reads from end)
+	if _, err := w.bufferedWriter.Write(footerData); err != nil {
 		return err
 	}
 
-	// Write footer data
-	if _, err := w.bufferedWriter.Write(footerData); err != nil {
+	footerSize := int64(len(footerData))
+	if err := binary.Write(w.bufferedWriter, binary.LittleEndian, footerSize); err != nil {
 		return err
 	}
 
