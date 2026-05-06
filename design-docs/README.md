@@ -9,6 +9,7 @@
 |-----|------|------|---------|------|
 | 001 | [Code Review Fixes](001-code-review-fixes.md) | approved | 2026-04-28 | - |
 | 002 | [Shutdown Recovery & Filter Backward Compatibility](002-shutdown-filter-backward-compat.md) | approved | 2026-04-28 | 001 |
+| 003 | [拆分 layered_storage.go](003-refactor-layered-storage.md) | draft | 2026-05-06 | - |
 
 ## 状态说明
 

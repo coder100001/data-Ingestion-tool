@@ -299,3 +299,504 @@ invalid yaml content: [
 		t.Error("Expected error for invalid YAML, got nil")
 	}
 }
+
+func TestIsPlaintextPassword(t *testing.T) {
+	tests := []struct {
+		name     string
+		password string
+		expected bool
+	}{
+		{"empty", "", false},
+		{"plaintext", "secret123", true},
+		{"env var syntax", "${MYSQL_PASSWORD}", false},
+		{"env var with default", "${MYSQL_PASSWORD:-default}", false},
+		{"env var with braces", "${DB_PASS}", false},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			result := IsPlaintextPassword(tt.password)
+			if result != tt.expected {
+				t.Errorf("IsPlaintextPassword(%q) = %v, want %v", tt.password, result, tt.expected)
+			}
+		})
+	}
+}
+
+func TestGetPlaintextPasswordFields(t *testing.T) {
+	tests := []struct {
+		name          string
+		config        Config
+		expectedCount int
+	}{
+		{
+			name: "mysql plaintext password",
+			config: Config{
+				Source: SourceConfig{
+					Type: "mysql",
+					MySQL: MySQLConfig{
+						Host:     "localhost",
+						User:     "root",
+						Password: "secret",
+						ServerID: 1001,
+					},
+				},
+			},
+			expectedCount: 1,
+		},
+		{
+			name: "mysql env var password",
+			config: Config{
+				Source: SourceConfig{
+					Type: "mysql",
+					MySQL: MySQLConfig{
+						Host:     "localhost",
+						User:     "root",
+						Password: "${MYSQL_PASSWORD}",
+						ServerID: 1001,
+					},
+				},
+			},
+			expectedCount: 0,
+		},
+		{
+			name: "postgresql plaintext password",
+			config: Config{
+				Source: SourceConfig{
+					Type: "postgresql",
+					PostgreSQL: PostgresConfig{
+						Host:     "localhost",
+						User:     "postgres",
+						Password: "secret",
+					},
+				},
+			},
+			expectedCount: 1,
+		},
+		{
+			name: "rest plaintext auth",
+			config: Config{
+				Source: SourceConfig{
+					Type: "rest",
+					REST: RESTConfig{
+						BaseURL: "http://api.example.com",
+						Headers: map[string]string{
+							"Authorization": "Bearer secret-token",
+						},
+					},
+				},
+			},
+			expectedCount: 1,
+		},
+		{
+			name: "rest env var auth",
+			config: Config{
+				Source: SourceConfig{
+					Type: "rest",
+					REST: RESTConfig{
+						BaseURL: "http://api.example.com",
+						Headers: map[string]string{
+							"Authorization": "${API_TOKEN}",
+						},
+					},
+				},
+			},
+			expectedCount: 0,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			fields := tt.config.GetPlaintextPasswordFields()
+			if len(fields) != tt.expectedCount {
+				t.Errorf("Expected %d plaintext fields, got %d: %v", tt.expectedCount, len(fields), fields)
+			}
+		})
+	}
+}
+
+func TestValidateKafkaConfig(t *testing.T) {
+	tests := []struct {
+		name    string
+		config  Config
+		wantErr bool
+	}{
+		{
+			name: "valid kafka config",
+			config: Config{
+				Source: SourceConfig{
+					Type: "kafka",
+					Kafka: KafkaConfig{
+						Brokers: []string{"localhost:9092"},
+						Topics:  []string{"test-topic"},
+						GroupID: "test-group",
+					},
+				},
+				Storage: StorageConfig{
+					Type: "local",
+					Local: LocalConfig{
+						FileFormat:        "json",
+						PartitionStrategy: "date",
+						Compression:       "none",
+					},
+				},
+			},
+			wantErr: false,
+		},
+		{
+			name: "missing kafka brokers",
+			config: Config{
+				Source: SourceConfig{
+					Type: "kafka",
+					Kafka: KafkaConfig{
+						Topics:  []string{"test-topic"},
+						GroupID: "test-group",
+					},
+				},
+			},
+			wantErr: true,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			err := tt.config.Validate()
+			if (err != nil) != tt.wantErr {
+				t.Errorf("Validate() error = %v, wantErr %v", err, tt.wantErr)
+			}
+		})
+	}
+}
+
+func TestValidatePostgreSQLConfig(t *testing.T) {
+	tests := []struct {
+		name    string
+		config  Config
+		wantErr bool
+	}{
+		{
+			name: "valid postgresql config",
+			config: Config{
+				Source: SourceConfig{
+					Type: "postgresql",
+					PostgreSQL: PostgresConfig{
+						Host:     "localhost",
+						Port:     5432,
+						User:     "postgres",
+						Password: "secret",
+						Database: "testdb",
+						SlotName: "test_slot",
+					},
+				},
+				Storage: StorageConfig{
+					Type: "local",
+					Local: LocalConfig{
+						FileFormat:        "json",
+						PartitionStrategy: "date",
+						Compression:       "none",
+					},
+				},
+			},
+			wantErr: false,
+		},
+		{
+			name: "missing postgresql host",
+			config: Config{
+				Source: SourceConfig{
+					Type: "postgresql",
+					PostgreSQL: PostgresConfig{
+						Port:     5432,
+						User:     "postgres",
+						Password: "secret",
+					},
+				},
+			},
+			wantErr: true,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			err := tt.config.Validate()
+			if (err != nil) != tt.wantErr {
+				t.Errorf("Validate() error = %v, wantErr %v", err, tt.wantErr)
+			}
+		})
+	}
+}
+
+func TestValidateRESTConfig(t *testing.T) {
+	tests := []struct {
+		name    string
+		config  Config
+		wantErr bool
+	}{
+		{
+			name: "valid rest config",
+			config: Config{
+				Source: SourceConfig{
+					Type: "rest",
+					REST: RESTConfig{
+						BaseURL:      "http://api.example.com",
+						Endpoints:    []string{"/users", "/orders"},
+						PollInterval: 60,
+					},
+				},
+				Storage: StorageConfig{
+					Type: "local",
+					Local: LocalConfig{
+						FileFormat:        "json",
+						PartitionStrategy: "date",
+						Compression:       "none",
+					},
+				},
+			},
+			wantErr: false,
+		},
+		{
+			name: "missing rest base_url",
+			config: Config{
+				Source: SourceConfig{
+					Type: "rest",
+					REST: RESTConfig{
+						Endpoints: []string{"/users"},
+					},
+				},
+			},
+			wantErr: true,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			err := tt.config.Validate()
+			if (err != nil) != tt.wantErr {
+				t.Errorf("Validate() error = %v, wantErr %v", err, tt.wantErr)
+			}
+		})
+	}
+}
+
+func TestValidateCompression(t *testing.T) {
+	tests := []struct {
+		name    string
+		config  Config
+		wantErr bool
+	}{
+		{
+			name: "valid compression snappy",
+			config: Config{
+				Source: SourceConfig{
+					Type: "mysql",
+					MySQL: MySQLConfig{
+						Host:     "localhost",
+						User:     "root",
+						ServerID: 1001,
+					},
+				},
+				Storage: StorageConfig{
+					Type: "local",
+					Local: LocalConfig{
+						FileFormat:        "parquet",
+						PartitionStrategy: "date",
+						Compression:       "snappy",
+					},
+				},
+			},
+			wantErr: false,
+		},
+		{
+			name: "valid compression gzip",
+			config: Config{
+				Source: SourceConfig{
+					Type: "mysql",
+					MySQL: MySQLConfig{
+						Host:     "localhost",
+						User:     "root",
+						ServerID: 1001,
+					},
+				},
+				Storage: StorageConfig{
+					Type: "local",
+					Local: LocalConfig{
+						FileFormat:        "json",
+						PartitionStrategy: "date",
+						Compression:       "gzip",
+					},
+				},
+			},
+			wantErr: false,
+		},
+		{
+			name: "valid compression zstd",
+			config: Config{
+				Source: SourceConfig{
+					Type: "mysql",
+					MySQL: MySQLConfig{
+						Host:     "localhost",
+						User:     "root",
+						ServerID: 1001,
+					},
+				},
+				Storage: StorageConfig{
+					Type: "local",
+					Local: LocalConfig{
+						FileFormat:        "parquet",
+						PartitionStrategy: "date",
+						Compression:       "zstd",
+					},
+				},
+			},
+			wantErr: false,
+		},
+		{
+			name: "invalid compression",
+			config: Config{
+				Source: SourceConfig{
+					Type: "mysql",
+					MySQL: MySQLConfig{
+						Host:     "localhost",
+						User:     "root",
+						ServerID: 1001,
+					},
+				},
+				Storage: StorageConfig{
+					Type: "local",
+					Local: LocalConfig{
+						FileFormat:        "json",
+						PartitionStrategy: "date",
+						Compression:       "invalid",
+					},
+				},
+			},
+			wantErr: true,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			err := tt.config.Validate()
+			if (err != nil) != tt.wantErr {
+				t.Errorf("Validate() error = %v, wantErr %v", err, tt.wantErr)
+			}
+		})
+	}
+}
+
+func TestValidatePartitionStrategy(t *testing.T) {
+	tests := []struct {
+		name    string
+		config  Config
+		wantErr bool
+	}{
+		{
+			name: "valid strategy date",
+			config: Config{
+				Source: SourceConfig{
+					Type: "mysql",
+					MySQL: MySQLConfig{
+						Host:     "localhost",
+						User:     "root",
+						ServerID: 1001,
+					},
+				},
+				Storage: StorageConfig{
+					Type: "local",
+					Local: LocalConfig{
+						FileFormat:        "json",
+						PartitionStrategy: "date",
+						Compression:       "none",
+					},
+				},
+			},
+			wantErr: false,
+		},
+		{
+			name: "valid strategy hour",
+			config: Config{
+				Source: SourceConfig{
+					Type: "mysql",
+					MySQL: MySQLConfig{
+						Host:     "localhost",
+						User:     "root",
+						ServerID: 1001,
+					},
+				},
+				Storage: StorageConfig{
+					Type: "local",
+					Local: LocalConfig{
+						FileFormat:        "json",
+						PartitionStrategy: "hour",
+						Compression:       "none",
+					},
+				},
+			},
+			wantErr: false,
+		},
+		{
+			name: "valid strategy none",
+			config: Config{
+				Source: SourceConfig{
+					Type: "mysql",
+					MySQL: MySQLConfig{
+						Host:     "localhost",
+						User:     "root",
+						ServerID: 1001,
+					},
+				},
+				Storage: StorageConfig{
+					Type: "local",
+					Local: LocalConfig{
+						FileFormat:        "json",
+						PartitionStrategy: "none",
+						Compression:       "none",
+					},
+				},
+			},
+			wantErr: false,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			err := tt.config.Validate()
+			if (err != nil) != tt.wantErr {
+				t.Errorf("Validate() error = %v, wantErr %v", err, tt.wantErr)
+			}
+		})
+	}
+}
+
+func TestValidateUnsupportedSourceType(t *testing.T) {
+	config := Config{
+		Source: SourceConfig{
+			Type: "unsupported",
+		},
+	}
+
+	err := config.Validate()
+	if err == nil {
+		t.Error("Expected error for unsupported source type, got nil")
+	}
+}
+
+func TestValidateUnsupportedStorageType(t *testing.T) {
+	config := Config{
+		Source: SourceConfig{
+			Type: "mysql",
+			MySQL: MySQLConfig{
+				Host:     "localhost",
+				User:     "root",
+				ServerID: 1001,
+			},
+		},
+		Storage: StorageConfig{
+			Type: "s3",
+		},
+	}
+
+	err := config.Validate()
+	if err == nil {
+		t.Error("Expected error for unsupported storage type, got nil")
+	}
+}

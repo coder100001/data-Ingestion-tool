@@ -1,0 +1,32 @@
+{
+  "project": {
+    "name": "data-ingestion-tool",
+    "description": "Enterprise-grade data ingestion tool",
+    "language": "go",
+    "linter": "golangci-lint"
+  },
+  "skills": {
+    "enabled": [
+      "superpowers-gstack-hybrid",
+      "code-review",
+      "test-driver",
+      "refactorer",
+      "doc-writer",
+      "bug-hunter",
+      "performance-tuner",
+      "security-auditor"
+    ],
+    "default": "superpowers-gstack-hybrid"
+  },
+  "workflow": {
+    "pre-commit": [
+      "lint",
+      "test",
+      "format"
+    ],
+    "on-push": [
+      "integration-test",
+      "coverage-check"
+    ]
+  }
+}
