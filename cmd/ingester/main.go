@@ -9,6 +9,7 @@ import (
 	"syscall"
 	"time"
 
+	"data-ingestion-tool/pkg/api"
 	"data-ingestion-tool/pkg/checkpoint"
 	"data-ingestion-tool/pkg/config"
 	"data-ingestion-tool/pkg/connector"
@@ -19,7 +20,7 @@ import (
 var (
 	configPath      = flag.String("config", "config.yaml", "Path to configuration file")
 	resetCheckpoint = flag.Bool("reset", false, "Reset checkpoint and start from beginning")
-	version         = "dev"
+	version         = "2.0.0"
 	commit          = "unknown"
 	date            = "unknown"
 )
@@ -58,6 +59,17 @@ func main() {
 	// Create context with cancellation
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
+
+	// Initialize API server if enabled
+	var apiServer *api.Server
+	if cfg.API.Enabled {
+		apiServer = api.NewServer(cfg, log, version)
+		go func() {
+			if err := apiServer.Start(); err != nil {
+				log.WithError(err).Error("API server error")
+			}
+		}()
+	}
 
 	// Initialize checkpoint manager
 	checkpointManager, err := checkpoint.NewManager(&cfg.Checkpoint, log)
@@ -132,7 +144,7 @@ func main() {
 	}
 
 	// Graceful shutdown
-	shutdown(log, conn, pipe, checkpointManager)
+	shutdown(log, conn, pipe, checkpointManager, apiServer)
 }
 
 // updateCheckpoint periodically updates the checkpoint
@@ -154,12 +166,18 @@ func updateCheckpoint(ctx context.Context, manager *checkpoint.Manager, conn con
 }
 
 // shutdown performs graceful shutdown with a 30-second timeout
-func shutdown(log *logger.Logger, conn connector.Connector, pipe *pipeline.Pipeline, manager *checkpoint.Manager) {
+func shutdown(log *logger.Logger, conn connector.Connector, pipe *pipeline.Pipeline, manager *checkpoint.Manager, apiServer *api.Server) {
 	log.Info("Shutting down gracefully...")
 
 	done := make(chan struct{})
 	go func() {
 		defer close(done)
+
+		if apiServer != nil {
+			if err := apiServer.Shutdown(context.Background()); err != nil {
+				log.WithError(err).Error("Error stopping API server")
+			}
+		}
 
 		if err := conn.Stop(); err != nil {
 			log.WithError(err).Error("Error stopping connector")
