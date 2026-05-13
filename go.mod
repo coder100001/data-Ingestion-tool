@@ -9,6 +9,7 @@ require (
 	github.com/prometheus/client_golang v1.20.4
 	github.com/sirupsen/logrus v1.9.3
 	github.com/stretchr/testify v1.11.1
+	github.com/ulule/limiter/v3 v3.11.2
 	gopkg.in/yaml.v3 v3.0.1
 )
 
