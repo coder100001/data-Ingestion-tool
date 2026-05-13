@@ -16,6 +16,7 @@ type Config struct {
 	Checkpoint CheckpointConfig `yaml:"checkpoint"`
 	Processing ProcessingConfig `yaml:"processing"`
 	Retry      RetryConfig      `yaml:"retry"`
+	API        APIConfig        `yaml:"api"`
 }
 
 // AppConfig contains application-level settings
@@ -129,6 +130,37 @@ type RetryConfig struct {
 	MaxIntervalMs     int `yaml:"max_interval_ms"`
 }
 
+// APIConfig contains API server settings
+type APIConfig struct {
+	Enabled    bool           `yaml:"enabled" mapstructure:"enabled"`
+	Host       string         `yaml:"host" mapstructure:"host"`
+	Port       int            `yaml:"port" mapstructure:"port"`
+	Auth       AuthConfig     `yaml:"auth" mapstructure:"auth"`
+	CORS       CORSConfig     `yaml:"cors" mapstructure:"cors"`
+	RateLimit  RateLimitConfig `yaml:"rate_limit" mapstructure:"rate_limit"`
+}
+
+// AuthConfig contains authentication settings
+type AuthConfig struct {
+	Enabled bool   `yaml:"enabled" mapstructure:"enabled"`
+	Type    string `yaml:"type" mapstructure:"type"`
+	APIKey  string `yaml:"api_key" mapstructure:"api_key"`
+}
+
+// CORSConfig contains CORS settings
+type CORSConfig struct {
+	Enabled        bool     `yaml:"enabled" mapstructure:"enabled"`
+	AllowedOrigins []string `yaml:"allowed_origins" mapstructure:"allowed_origins"`
+	AllowedMethods []string `yaml:"allowed_methods" mapstructure:"allowed_methods"`
+}
+
+// RateLimitConfig contains rate limiting settings
+type RateLimitConfig struct {
+	Enabled           bool `yaml:"enabled" mapstructure:"enabled"`
+	RequestsPerSecond int  `yaml:"requests_per_second" mapstructure:"requests_per_second"`
+	Burst             int  `yaml:"burst" mapstructure:"burst"`
+}
+
 // Load reads configuration from a YAML file
 func Load(path string) (*Config, error) {
 	data, err := os.ReadFile(path)
@@ -234,6 +266,24 @@ func (c *Config) setDefaults() {
 	}
 	if c.Retry.MaxIntervalMs == 0 {
 		c.Retry.MaxIntervalMs = 10000
+	}
+	if c.API.Host == "" {
+		c.API.Host = "0.0.0.0"
+	}
+	if c.API.Port == 0 {
+		c.API.Port = 8080
+	}
+	if len(c.API.CORS.AllowedOrigins) == 0 {
+		c.API.CORS.AllowedOrigins = []string{"*"}
+	}
+	if len(c.API.CORS.AllowedMethods) == 0 {
+		c.API.CORS.AllowedMethods = []string{"GET", "POST", "PUT", "DELETE", "OPTIONS"}
+	}
+	if c.API.RateLimit.RequestsPerSecond == 0 {
+		c.API.RateLimit.RequestsPerSecond = 100
+	}
+	if c.API.RateLimit.Burst == 0 {
+		c.API.RateLimit.Burst = 50
 	}
 }
 
