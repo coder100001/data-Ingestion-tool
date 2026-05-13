@@ -2,13 +2,15 @@ package api
 
 import (
 	"github.com/gin-gonic/gin"
+
+	"data-ingestion-tool/pkg/config"
 )
 
 func setupRoutes(
 	r *gin.Engine,
 	handlers *Handlers,
 	configHandlers *ConfigHandlers,
-	apiCfg APIConfig,
+	apiCfg config.APIConfig,
 ) {
 	r.GET("/health", handlers.HealthCheck)
 	r.GET("/ready", handlers.ReadyCheck)

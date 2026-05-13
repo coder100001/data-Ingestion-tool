@@ -29,7 +29,7 @@ func TestNewServer(t *testing.T) {
 		},
 	}
 	
-	log := logger.NewLogger("info")
+	log, _ := logger.New("info", "")
 	srv := NewServer(cfg, log, "1.0.0")
 	
 	assert.NotNil(t, srv)
@@ -44,7 +44,7 @@ func TestServerRoutes(t *testing.T) {
 		},
 	}
 	
-	log := logger.NewLogger("info")
+	log, _ := logger.New("info", "")
 	srv := NewServer(cfg, log, "1.0.0")
 	
 	tests := []struct {
@@ -76,7 +76,7 @@ func TestServerShutdown(t *testing.T) {
 		},
 	}
 	
-	log := logger.NewLogger("info")
+	log, _ := logger.New("info", "")
 	srv := NewServer(cfg, log, "1.0.0")
 	
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
