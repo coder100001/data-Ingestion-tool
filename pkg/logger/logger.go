@@ -109,3 +109,26 @@ func (l *Logger) WithFields(fields logrus.Fields) *logrus.Entry {
 func (l *Logger) WithError(err error) *logrus.Entry {
 	return l.Logger.WithError(err)
 }
+
+// Explicit logrus method wrappers to ensure proper type inference
+func (l *Logger) Trace(args ...interface{})                 { l.Logger.Trace(args...) }
+func (l *Logger) Tracef(format string, args ...interface{}) { l.Logger.Tracef(format, args...) }
+func (l *Logger) Debug(args ...interface{})                 { l.Logger.Debug(args...) }
+func (l *Logger) Debugf(format string, args ...interface{}) { l.Logger.Debugf(format, args...) }
+func (l *Logger) Info(args ...interface{})                  { l.Logger.Info(args...) }
+func (l *Logger) Infof(format string, args ...interface{})  { l.Logger.Infof(format, args...) }
+func (l *Logger) Warn(args ...interface{})                  { l.Logger.Warn(args...) }
+func (l *Logger) Warnf(format string, args ...interface{})  { l.Logger.Warnf(format, args...) }
+func (l *Logger) Warning(args ...interface{})               { l.Logger.Warning(args...) }
+func (l *Logger) Warningf(format string, args ...interface{}) { l.Logger.Warningf(format, args...) }
+func (l *Logger) Error(args ...interface{})                 { l.Logger.Error(args...) }
+func (l *Logger) Errorf(format string, args ...interface{}) { l.Logger.Errorf(format, args...) }
+func (l *Logger) Fatal(args ...interface{})                 { l.Logger.Fatal(args...) }
+func (l *Logger) Fatalf(format string, args ...interface{}) { l.Logger.Fatalf(format, args...) }
+func (l *Logger) Panic(args ...interface{})                 { l.Logger.Panic(args...) }
+func (l *Logger) Panicf(format string, args ...interface{}) { l.Logger.Panicf(format, args...) }
+
+// GetLevel returns the current log level
+func (l *Logger) GetLevel() logrus.Level {
+	return l.Logger.GetLevel()
+}
