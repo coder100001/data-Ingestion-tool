@@ -5,26 +5,53 @@ A high-performance incremental data ingestion tool that captures changes from My
 ## Features
 
 - **Incremental Data Capture**: Uses MySQL binlog CDC (Change Data Capture) to capture real-time data changes
+- **Management REST API**: Built-in HTTP API for health checks, config management, and metrics
 - **Multiple Source Support**: Extensible architecture supporting MySQL, PostgreSQL, Kafka, and REST APIs
-- **Flexible Storage**: Local filesystem storage with configurable partitioning strategies
-- **Data Processing Pipeline**: Built-in filtering and transformation capabilities
+- **Layered Storage (Medallion)**: Bronze (raw) → Silver (cleaned) → Gold (optimized) data lake with automatic background processing
+- **Data Processing Pipeline**: Built-in filter and transformation pipeline with retry and dead letter queue
 - **Checkpoint Management**: Automatic progress tracking with crash recovery
 - **High Performance**: Worker pool architecture for parallel processing
-- **Production Ready**: Comprehensive logging, error handling, and monitoring
+- **Production Ready**: Comprehensive structured logging, error handling, rate limiting, and CORS support
 
 ## Architecture
 
 ```
-┌─────────────────┐     ┌──────────────────┐     ┌─────────────────┐
-│   Data Source   │────▶│  Data Connector  │────▶│    Pipeline     │
-│  (MySQL, etc.)  │     │   (Binlog CDC)   │     │ (Filter/Trans)  │
-└─────────────────┘     └──────────────────┘     └────────┬────────┘
-                                                          │
-                                                          ▼
-┌─────────────────┐     ┌──────────────────┐     ┌─────────────────┐
-│    Checkpoint   │◀────│  Checkpoint Mgr  │◀────│     Storage     │
-│    (Metadata)   │     │                  │     │  (Data Lake)    │
-└─────────────────┘     └──────────────────┘     └─────────────────┘
+┌──────────────┐
+│  Management  │
+│   REST API   │
+│  (Health /   │
+│   Config)    │
+└──────┬───────┘
+       │
+┌──────▼──────────────────────────────────────┐
+│              Pipeline                        │
+│  ┌──────────┐  ┌──────────┐  ┌──────────┐  │
+│  │  Filter  │─▶│Transform │─▶│  Write   │  │
+│  └──────────┘  └──────────┘  └────┬─────┘  │
+│   ┌──────────┐  ┌──────────┐      │        │
+│   │  Retry   │  │ Dead Let │◀─────┘        │
+│   │  (exp.)  │  │ ter Queue│               │
+│   └──────────┘  └──────────┘               │
+└──────────────────┬──────────────────────────┘
+                   │
+┌──────────────────▼──────────────────────────┐
+│          Layered Storage (Medallion)         │
+│  ┌──────────┐  ┌──────────┐  ┌──────────┐  │
+│  │  Bronze  │─▶│  Silver  │─▶│   Gold   │  │
+│  │  (Raw)   │  │(Cleaned) │  │(Optimiz.)│  │
+│  └──────────┘  └──────────┘  └──────────┘  │
+│        ┌──────────────────────┐             │
+│        │  Background Timer   │  Bronze→Gold │
+│        └──────────────────────┘              │
+└──────────────────────────────────────────────┘
+                   ▲
+┌──────────────────┴─────────────┐
+│     Connector / Checkpoint     │
+│  ┌──────────┐  ┌────────────┐  │
+│  │  MySQL   │  │ Checkpoint │  │
+│  │  binlog  │  │  Manager   │  │
+│  └──────────┘  └────────────┘  │
+└────────────────────────────────┘
 ```
 
 ## Quick Start
@@ -132,7 +159,7 @@ Usage of ./data-ingestion-tool:
 
 | Option | Description | Default |
 |--------|-------------|---------|
-| `source.type` | Source type: mysql, kafka, postgresql, rest | mysql |
+| `source.type` | Source type: mysql (kafka, postgresql, rest not yet implemented) | mysql |
 | `source.mysql.host` | MySQL host | localhost |
 | `source.mysql.port` | MySQL port | 3306 |
 | `source.mysql.user` | MySQL username | - |
@@ -157,8 +184,6 @@ Usage of ./data-ingestion-tool:
 |--------|-------------|---------|
 | `processing.batch_size` | Batch size for processing | 100 |
 | `processing.worker_count` | Number of worker goroutines | 4 |
-| `processing.filters` | Filter rules | [] |
-| `processing.transforms` | Transform rules | [] |
 
 #### Checkpoint Configuration
 
@@ -167,20 +192,60 @@ Usage of ./data-ingestion-tool:
 | `checkpoint.storage_path` | Path to checkpoint file | ./metadata/checkpoint.json |
 | `checkpoint.save_interval_sec` | Auto-save interval | 10 |
 
+## Management REST API
+
+The tool provides a built-in HTTP management API (default port `8080`):
+
+### Endpoints
+
+| Method | Path | Description |
+|--------|------|-------------|
+| `GET` | `/health` | Health check (Redisiness + uptime) |
+| `GET` | `/api/v1/config` | Get current configuration |
+| `PUT` | `/api/v1/config` | Update configuration (hot-reload) |
+
+### Configuration
+
+```yaml
+api:
+  enabled: true
+  host: "0.0.0.0"
+  port: 8080
+  cors_origins: ["*"]
+  rate_limit: 100          # requests/second
+  api_key: ""              # optional API key auth, empty = no auth
+```
+
 ## Data Lake Structure
 
-The tool creates a partitioned directory structure in the data lake:
+The tool uses a **medallion architecture** (Bronze → Silver → Gold) with automatic background processing:
 
 ```
 data-lake/
-├── 2024-01-15/
-│   ├── data_20240115_120000.json
-│   ├── data_20240115_130000.json
-│   └── ...
-├── 2024-01-16/
-│   ├── data_20240116_090000.json
-│   └── ...
+├── bronze/                     # Raw ingested data (unchanged)
+│   └── 2024-01-15/
+│       ├── testdb/
+│       │   └── users/
+│       │       └── data_20240115_120000.json
+│       └── ...
+├── silver/                     # Cleaned and validated data
+│   └── 2024-01-15/
+│       ├── testdb/
+│       │   └── users/
+│       │       └── data_20240115_120000.parquet
+│       └── ...
+└── gold/                       # Optimized for query performance
+    └── 2024-01-15/
+        ├── testdb/
+        │   └── users/
+        │       └── daily_data_20240115.parquet
+        └── ...
+
 ```
+
+- **Bronze Layer**: Raw CDC data, written immediately on ingestion
+- **Silver Layer**: Cleaned and validated, processed by background timer
+- **Gold Layer**: Aggregated and optimized (e.g., daily grain), processed by background timer
 
 ### JSON Format
 
@@ -215,19 +280,28 @@ data-lake/
 ├── cmd/
 │   └── ingester/         # Main application entry point
 ├── pkg/
+│   ├── api/              # Management REST API (health, config, metrics)
 │   ├── checkpoint/       # Checkpoint management
 │   ├── config/           # Configuration handling
-│   ├── connector/        # Data source connectors
-│   ├── logger/           # Logging utilities
+│   ├── connector/        # Data source connectors (MySQL binlog CDC)
+│   ├── deadletter/       # Dead letter queue for failed records
+│   ├── logger/           # Structured logging (logrus wrapper)
 │   ├── models/           # Data models
-│   └── pipeline/         # Data processing pipeline
+│   ├── pipeline/         # Data processing pipeline (filter/transform/write)
+│   ├── retry/            # Exponential backoff retry logic
+│   ├── storage/          # Layered storage (Bronze/Silver/Gold)
+│   └── util/             # Utility functions
 ├── scripts/              # Database initialization scripts
+├── demo/                 # Demo scripts
+├── config.example.yaml   # Example configuration
 ├── config.yaml           # Configuration file
 ├── docker-compose.yml    # Docker Compose setup
 ├── Dockerfile            # Docker image definition
 ├── Makefile              # Build automation
 └── README.md             # This file
 ```
+
+Note: PostgreSQL, Kafka, and REST connectors are stubbed and will be rejected at config validation. Currently only MySQL binlog CDC is fully implemented.
 
 ### Running Tests
 
@@ -277,6 +351,12 @@ func (c *MyConnector) Connect(ctx context.Context) error {
 
 ### Adding Custom Filters
 
+Note: Filter rules are not yet implemented. If configured in `config.yaml`, the application will fail to start. (Coming in a future release.)
+
+### Adding Custom Transformers
+
+Note: Transform rules are not yet implemented. If configured in `config.yaml`, the application will fail to start. (Coming in a future release.)
+
 ```go
 type MyFilter struct{}
 
@@ -285,8 +365,6 @@ func (f *MyFilter) Apply(change *models.DataChange) bool {
     return change.Database == "important_db"
 }
 ```
-
-### Adding Custom Transformers
 
 ```go
 type MyTransformer struct{}
