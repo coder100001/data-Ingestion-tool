@@ -112,8 +112,10 @@ func main() {
 	}
 	defer conn.Disconnect()
 
-	// Set checkpoint position if available
-	if checkpointManager.IsInitialized() {
+	// Initialize checkpoint with correct source type
+	if !checkpointManager.IsInitialized() {
+		checkpointManager.Initialize(cfg.Source.Type, conn.GetPosition())
+	} else {
 		pos := checkpointManager.GetPosition()
 		if err := conn.SetPosition(pos); err != nil {
 			log.WithError(err).Warn("Failed to set position from checkpoint")

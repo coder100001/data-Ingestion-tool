@@ -12,13 +12,15 @@ import (
 
 // LayeredStorage manages the three data layers (bronze, silver, gold)
 type LayeredStorage struct {
-	basePath   string
-	logger     *logger.Logger
-	layers     map[LayerType]*LayerConfig
-	cleaner    DataCleaner
-	validator  DataValidator
-	aggregator DataAggregator
-	catalog    *DataCatalog
+	basePath      string
+	logger        *logger.Logger
+	layers        map[LayerType]*LayerConfig
+	cleaner       DataCleaner
+	validator     DataValidator
+	aggregator    DataAggregator
+	catalog       *DataCatalog
+	processTicker *time.Ticker
+	processDone   chan struct{}
 }
 
 // NewLayeredStorage creates a new LayeredStorage instance
@@ -76,23 +78,107 @@ func (s *LayeredStorage) Write(change *models.DataChange) error {
 		return fmt.Errorf("nil data change")
 	}
 
-	// Write to bronze layer
+	// Write to bronze layer only — Silver/Gold processing is handled by background timer
 	if err := s.WriteToBronze(change); err != nil {
 		return fmt.Errorf("bronze layer write failed: %w", err)
 	}
 
-	// Process bronze to silver
-	date := time.Now().UTC().Format("2006-01-02")
-	if err := s.ProcessBronzeToSilver(change.Database, change.Table, date); err != nil {
-		s.logger.WithError(err).Warn("Silver layer processing failed")
-	}
-
-	// Process silver to gold (daily grain)
-	if err := s.ProcessSilverToGold(change.Database, change.Table, "daily", date); err != nil {
-		s.logger.WithError(err).Warn("Gold layer processing failed")
-	}
-
 	return nil
+}
+
+// StartProcessing starts the background goroutine that periodically processes
+// Bronze→Silver and Silver→Gold layers
+func (s *LayeredStorage) StartProcessing(interval time.Duration) {
+	if s.processTicker != nil {
+		return // already started
+	}
+	s.processTicker = time.NewTicker(interval)
+	s.processDone = make(chan struct{})
+
+	go func() {
+		defer close(s.processDone)
+		for {
+			select {
+			case <-s.processTicker.C:
+				s.processAllLayers()
+			case <-s.processDone:
+				return
+			}
+		}
+	}()
+
+	s.logger.WithField("interval", interval).Info("Layered storage background processing started")
+}
+
+// StopProcessing stops the background processing goroutine
+func (s *LayeredStorage) StopProcessing() {
+	if s.processTicker == nil {
+		return
+	}
+	s.processTicker.Stop()
+	close(s.processDone)
+	s.processTicker = nil
+	s.logger.Info("Layered storage background processing stopped")
+}
+
+// processAllLayers processes Bronze→Silver→Gold for all known partitions
+func (s *LayeredStorage) processAllLayers() {
+	// Scan all date partitions in the bronze layer
+	bronzePath := filepath.Join(s.basePath, string(BronzeLayer))
+	dateEntries, err := os.ReadDir(bronzePath)
+	if err != nil {
+		if !os.IsNotExist(err) {
+			s.logger.WithError(err).Warn("Failed to scan bronze layer")
+		}
+		return
+	}
+
+	for _, dateEntry := range dateEntries {
+		if !dateEntry.IsDir() {
+			continue
+		}
+		date := dateEntry.Name()
+
+		datePath := filepath.Join(bronzePath, date)
+		entries, err := os.ReadDir(datePath)
+		if err != nil {
+			continue
+		}
+
+		for _, dbEntry := range entries {
+			if !dbEntry.IsDir() {
+				continue
+			}
+			dbPath := filepath.Join(datePath, dbEntry.Name())
+			tableEntries, err := os.ReadDir(dbPath)
+			if err != nil {
+				continue
+			}
+			for _, tableEntry := range tableEntries {
+				if !tableEntry.IsDir() {
+					continue
+				}
+				database := dbEntry.Name()
+				table := tableEntry.Name()
+
+				if err := s.ProcessBronzeToSilver(database, table, date); err != nil {
+					s.logger.WithError(err).WithFields(map[string]interface{}{
+						"database": database,
+						"table":    table,
+						"date":     date,
+					}).Warn("Silver layer processing failed")
+				}
+
+				if err := s.ProcessSilverToGold(database, table, "daily", date); err != nil {
+					s.logger.WithError(err).WithFields(map[string]interface{}{
+						"database": database,
+						"table":    table,
+						"date":     date,
+					}).Warn("Gold layer processing failed")
+				}
+			}
+		}
+	}
 }
 
 func (s *LayeredStorage) getCleaningRules(database, table string) []CleaningRule {
@@ -105,16 +191,8 @@ func (s *LayeredStorage) getCleaningRules(database, table string) []CleaningRule
 }
 
 func (s *LayeredStorage) getValidationRules(database, table string) []ValidationRule {
-	return []ValidationRule{
-		{
-			Field:    database,
-			RuleType: "required",
-		},
-		{
-			Field:    table,
-			RuleType: "required",
-		},
-	}
+	// No default validation rules — rules should come from config or schema registry
+	return nil
 }
 
 func (s *LayeredStorage) calculateQualityScore(vr *ValidationResult) float64 {
@@ -122,15 +200,20 @@ func (s *LayeredStorage) calculateQualityScore(vr *ValidationResult) float64 {
 		return 0.0
 	}
 
-	if len(vr.Errors) == 0 {
+	totalChecks := len(vr.Errors) + len(vr.Warnings)
+	if totalChecks == 0 {
 		return 1.0
 	}
 
-	if len(vr.Warnings) == 0 {
-		return 0.5
+	// Weighted scoring: errors count 3x more than warnings
+	errorWeight := 3.0
+	warnWeight := 1.0
+	deduction := (errorWeight*float64(len(vr.Errors)) + warnWeight*float64(len(vr.Warnings))) / (errorWeight + warnWeight)
+	score := 1.0 - deduction/float64(totalChecks+1)
+	if score < 0.0 {
+		score = 0.0
 	}
-
-	return 0.3
+	return score
 }
 
 // GetLayerPath returns the path for a given layer, database and table

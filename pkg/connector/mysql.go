@@ -81,9 +81,12 @@ func (m *MySQLConnector) Connect(ctx context.Context) error {
 func (m *MySQLConnector) Disconnect() error {
 	m.logger.Info("Disconnecting from MySQL...")
 
+	m.mu.Lock()
 	if m.syncer != nil {
 		m.syncer.Close()
+		m.syncer = nil
 	}
+	m.mu.Unlock()
 
 	if m.canal != nil {
 		m.canal.Close()
@@ -115,7 +118,7 @@ func (m *MySQLConnector) Start(ctx context.Context, changeChan chan<- *models.Da
 	return nil
 }
 
-// streamBinlog streams binlog events
+// streamBinlog streams binlog events with exponential backoff reconnection
 func (m *MySQLConnector) streamBinlog(ctx context.Context) {
 	defer func() {
 		if r := recover(); r != nil {
@@ -126,6 +129,7 @@ func (m *MySQLConnector) streamBinlog(ctx context.Context) {
 	var pos mysql.Position
 
 	// Use checkpoint position if available
+	m.mu.RLock()
 	if m.position.BinlogFile != "" {
 		pos = mysql.Position{
 			Name: m.position.BinlogFile,
@@ -136,13 +140,16 @@ func (m *MySQLConnector) streamBinlog(ctx context.Context) {
 			"pos":  pos.Pos,
 		}).Info("Starting from checkpoint position")
 	} else {
+		m.mu.RUnlock()
 		// Get current master position
 		pos = m.syncer.GetNextPosition()
 		m.logger.WithFields(map[string]interface{}{
 			"file": pos.Name,
 			"pos":  pos.Pos,
 		}).Info("Starting from current master position")
+		m.mu.RLock()
 	}
+	m.mu.RUnlock()
 
 	// Start syncing
 	streamer, err := m.syncer.StartSync(pos)
@@ -151,6 +158,10 @@ func (m *MySQLConnector) streamBinlog(ctx context.Context) {
 		return
 	}
 	m.streamer = streamer
+
+	// Exponential backoff for reconnection
+	backoffMs := 1000
+	maxBackoffMs := 60000
 
 	for {
 		select {
@@ -163,9 +174,42 @@ func (m *MySQLConnector) streamBinlog(ctx context.Context) {
 		default:
 			event, err := streamer.GetEvent(ctx)
 			if err != nil {
-				m.logger.WithError(err).Error("Failed to get binlog event")
-				time.Sleep(time.Second)
+				m.logger.WithError(err).Error("Failed to get binlog event, attempting reconnection")
+
+				// Exponential backoff before reconnect
+				delay := time.Duration(backoffMs) * time.Millisecond
+				select {
+				case <-ctx.Done():
+					return
+				case <-time.After(delay):
+				}
+
+				// Attempt to reconnect
+				if reconnectErr := m.reconnect(ctx, pos); reconnectErr != nil {
+					m.logger.WithError(reconnectErr).Error("Reconnection failed")
+					backoffMs = backoffMs * 2
+					if backoffMs > maxBackoffMs {
+						backoffMs = maxBackoffMs
+					}
+					continue
+				}
+
+				// Reconnection successful, reset backoff
+				backoffMs = 1000
+				m.mu.RLock()
+				streamer = m.streamer
+				m.mu.RUnlock()
 				continue
+			}
+
+			// Reset backoff on successful event
+			backoffMs = 1000
+
+			// Handle binlog rotation: update local pos.Name to track the new file
+			if rotateEvent, ok := event.Event.(*replication.RotateEvent); ok {
+				pos.Name = string(rotateEvent.NextLogName)
+				pos.Pos = uint32(rotateEvent.Position)
+				m.logger.WithField("next_file", pos.Name).Debug("Binlog rotation detected in streamer")
 			}
 
 			// Update position
@@ -180,6 +224,55 @@ func (m *MySQLConnector) streamBinlog(ctx context.Context) {
 			}
 		}
 	}
+}
+
+// reconnect attempts to re-establish the binlog syncer connection
+func (m *MySQLConnector) reconnect(ctx context.Context, lastPos mysql.Position) error {
+	m.logger.Info("Attempting MySQL reconnection...")
+
+	// Close old syncer and create new one under lock
+	m.mu.Lock()
+	if m.syncer != nil {
+		m.syncer.Close()
+	}
+
+	mysqlCfg := m.cfg.Source.MySQL
+	binlogCfg := replication.BinlogSyncerConfig{
+		ServerID: mysqlCfg.ServerID,
+		Flavor:   "mysql",
+		Host:     mysqlCfg.Host,
+		Port:     uint16(mysqlCfg.Port),
+		User:     mysqlCfg.User,
+		Password: mysqlCfg.Password,
+	}
+
+	m.syncer = replication.NewBinlogSyncer(binlogCfg)
+
+	// Use last known position for resume
+	resumePos := mysql.Position{
+		Name: m.position.BinlogFile,
+		Pos:  m.position.BinlogPos,
+	}
+
+	if resumePos.Name == "" {
+		resumePos = lastPos
+	}
+	m.mu.Unlock()
+
+	streamer, err := m.syncer.StartSync(resumePos)
+	if err != nil {
+		return fmt.Errorf("failed to start sync after reconnect: %w", err)
+	}
+
+	m.mu.Lock()
+	m.streamer = streamer
+	m.mu.Unlock()
+
+	m.logger.WithFields(map[string]interface{}{
+		"file": resumePos.Name,
+		"pos":  resumePos.Pos,
+	}).Info("MySQL reconnected successfully")
+	return nil
 }
 
 // processEvent processes a single binlog event
@@ -302,8 +395,10 @@ func (m *MySQLConnector) processRowsEvent(header *replication.EventHeader, e *re
 		}
 
 		change := models.NewDataChange(changeType, database, table)
+		m.mu.RLock()
 		change.BinlogFile = m.position.BinlogFile
 		change.BinlogPos = m.position.BinlogPos
+		m.mu.RUnlock()
 		change.Source = fmt.Sprintf("mysql://%s@%s:%d", m.cfg.Source.MySQL.User, m.cfg.Source.MySQL.Host, m.cfg.Source.MySQL.Port)
 
 		// Add schema info

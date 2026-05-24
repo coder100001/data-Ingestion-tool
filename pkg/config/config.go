@@ -302,17 +302,11 @@ func (c *Config) Validate() error {
 			return fmt.Errorf("mysql server_id is required")
 		}
 	case "kafka":
-		if len(c.Source.Kafka.Brokers) == 0 {
-			return fmt.Errorf("kafka brokers are required")
-		}
+		return fmt.Errorf("kafka connector is not yet implemented, please use source.type: mysql")
 	case "postgresql":
-		if c.Source.PostgreSQL.Host == "" {
-			return fmt.Errorf("postgresql host is required")
-		}
+		return fmt.Errorf("postgresql connector is not yet implemented, please use source.type: mysql")
 	case "rest":
-		if c.Source.REST.BaseURL == "" {
-			return fmt.Errorf("rest base_url is required")
-		}
+		return fmt.Errorf("rest connector is not yet implemented, please use source.type: mysql")
 	default:
 		return fmt.Errorf("unsupported source type: %s", c.Source.Type)
 	}

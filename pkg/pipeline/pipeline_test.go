@@ -270,21 +270,12 @@ func TestStartWithFiltersAndTransforms(t *testing.T) {
 
 	p := NewPipeline(cfg, newTestLogger(), NewMockStorage())
 
-	// Backward compatibility: unsupported filter/transform rules should not fail startup
-	// They fall back to NoOp with a warning log
-	if err := p.Start(); err != nil {
-		t.Fatalf("Start failed: %v", err)
+	// Configured but unimplemented filter/transform rules should fail startup
+	// to prevent silent data pass-through
+	if err := p.Start(); err == nil {
+		t.Error("Expected Start to fail when unimplemented filter/transform rules are configured")
+		_ = p.Stop()
 	}
-
-	if len(p.filters) != 1 {
-		t.Errorf("Expected 1 filter, got %d", len(p.filters))
-	}
-
-	if len(p.transformers) != 1 {
-		t.Errorf("Expected 1 transformer, got %d", len(p.transformers))
-	}
-
-	_ = p.Stop()
 }
 
 func TestProcessChange(t *testing.T) {

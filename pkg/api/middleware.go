@@ -1,9 +1,12 @@
 package api
 
 import (
+	"fmt"
 	"net/http"
+	"os"
+	"runtime/debug"
 	"time"
-	
+
 	"github.com/gin-gonic/gin"
 	"github.com/ulule/limiter/v3"
 	mgin "github.com/ulule/limiter/v3/drivers/middleware/gin"
@@ -14,23 +17,14 @@ func LoggerMiddleware() gin.HandlerFunc {
 	return func(c *gin.Context) {
 		start := time.Now()
 		path := c.Request.URL.Path
-		
+
 		c.Next()
-		
+
 		latency := time.Since(start)
 		status := c.Writer.Status()
-		
+
 		if status >= 400 {
-			c.Error(gin.Error{
-				Err:  gin.Error{}.Err,
-				Meta: gin.H{
-					"status":   status,
-					"method":   c.Request.Method,
-					"path":     path,
-					"latency":  latency.String(),
-					"clientIP": c.ClientIP(),
-				},
-			})
+			_ = c.Error(fmt.Errorf("HTTP %d %s %s latency=%s clientIP=%s", status, c.Request.Method, path, latency.String(), c.ClientIP()))
 		}
 	}
 }
@@ -105,6 +99,11 @@ func AuthMiddleware(apiKey string) gin.HandlerFunc {
 
 func RecoveryMiddleware() gin.HandlerFunc {
 	return gin.CustomRecovery(func(c *gin.Context, recovered interface{}) {
+		stack := string(debug.Stack())
+		_ = c.Error(fmt.Errorf("panic recovered: %v", recovered))
+		// Write stack trace to stderr for debugging — stderr is always available
+		// even if the logging infrastructure is broken
+		fmt.Fprintf(os.Stderr, "[PANIC RECOVERED] %v\n%s\n", recovered, stack)
 		c.JSON(http.StatusInternalServerError, ApiResponse{
 			Success: false,
 			Error: &ApiError{

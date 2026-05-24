@@ -219,30 +219,16 @@ func (p *Pipeline) writeToDeadLetter(change *models.DataChange, failureReason st
 
 // initFilters initializes filters from configuration
 func (p *Pipeline) initFilters() error {
-	for _, rule := range p.cfg.Processing.Filters {
-		filter, err := parseFilterRule(rule)
-		if err != nil {
-			p.logger.WithFields(map[string]interface{}{
-				"rule": rule,
-			}).Warn("Filter rule parsing not yet implemented, using NoOp filter (data will pass through unchanged)")
-			filter = &NoOpFilter{}
-		}
-		p.AddFilter(filter)
+	if len(p.cfg.Processing.Filters) > 0 {
+		return fmt.Errorf("filter rules are configured but parsing is not yet implemented; remove filters from config to proceed")
 	}
 	return nil
 }
 
 // initTransformers initializes transformers from configuration
 func (p *Pipeline) initTransformers() error {
-	for _, rule := range p.cfg.Processing.Transforms {
-		transformer, err := parseTransformRule(rule)
-		if err != nil {
-			p.logger.WithFields(map[string]interface{}{
-				"rule": rule,
-			}).Warn("Transform rule parsing not yet implemented, using NoOp transformer (data will pass through unchanged)")
-			transformer = &NoOpTransformer{}
-		}
-		p.AddTransformer(transformer)
+	if len(p.cfg.Processing.Transforms) > 0 {
+		return fmt.Errorf("transform rules are configured but parsing is not yet implemented; remove transforms from config to proceed")
 	}
 	return nil
 }

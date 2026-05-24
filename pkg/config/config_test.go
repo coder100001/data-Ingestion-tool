@@ -441,7 +441,7 @@ func TestValidateKafkaConfig(t *testing.T) {
 					},
 				},
 			},
-			wantErr: false,
+			wantErr: true, // kafka connector not yet implemented
 		},
 		{
 			name: "missing kafka brokers",
@@ -497,7 +497,7 @@ func TestValidatePostgreSQLConfig(t *testing.T) {
 					},
 				},
 			},
-			wantErr: false,
+			wantErr: true, // postgresql connector not yet implemented
 		},
 		{
 			name: "missing postgresql host",
@@ -551,7 +551,7 @@ func TestValidateRESTConfig(t *testing.T) {
 					},
 				},
 			},
-			wantErr: false,
+			wantErr: true, // rest connector not yet implemented
 		},
 		{
 			name: "missing rest base_url",
